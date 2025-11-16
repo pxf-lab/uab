@@ -1,6 +1,6 @@
 from typing import Optional, Dict
 import os
-from PySide6.QtCore import Qt, QSize, QEvent, Signal, QPoint, QTimer
+from PySide6.QtCore import Qt, QEvent, Signal, QTimer
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtWidgets import (
     QSizePolicy,
@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
     QGraphicsDropShadowEffect,
     QDialog,
     QMenu,

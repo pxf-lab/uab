@@ -132,9 +132,24 @@ class Presenter(QWidget):
                 self.on_asset_thumbnail_double_clicked)
             asset_thumbnail.asset_clicked.connect(
                 self.on_asset_thumbnail_clicked)
+            asset_thumbnail.open_image_requested.connect(
+                self.on_open_image_requested)
+            asset_thumbnail.reveal_in_file_system_requested.connect(
+                self.on_reveal_in_file_system_requested)
+            asset_thumbnail.instantiate_requested.connect(
+                self.on_instantiate_requested)
             thumbnails.append(asset_thumbnail)
 
         return thumbnails
+
+    def on_open_image_requested(self, asset_id: int) -> None:
+        pass
+
+    def on_reveal_in_file_system_requested(self, asset_id: int) -> None:
+        pass
+
+    def on_instantiate_requested(self, asset_id: int) -> None:
+        pass
 
     def on_search_changed(self, text: str, delay: int = 200) -> None:
         if not hasattr(self, "_search_debounce_timer"):
