@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QWidget
 import os
+import subprocess
+import platform
 from typing import List
 
 from uab.frontend.thumbnail import Thumbnail
@@ -141,13 +143,18 @@ class Presenter(QWidget):
 
         return thumbnails
 
-    def on_open_image_requested(self, asset_id: int) -> None:
+    def on_open_image_requested(self, asset: dict) -> None:
+        self.widget.show_message(
+            f"Opening image for asset: {asset['name']}", "info", 3000)
+        if platform.system() == 'Darwin':
+            subprocess.call(('open', asset['directory_path']))
+        elif platform.system() == 'Windows':
+            os.startfile(asset['directory_path'])
+
+    def on_reveal_in_file_system_requested(self, asset: dict) -> None:
         pass
 
-    def on_reveal_in_file_system_requested(self, asset_id: int) -> None:
-        pass
-
-    def on_instantiate_requested(self, asset_id: int) -> None:
+    def on_instantiate_requested(self, asset: dict) -> None:
         pass
 
     def on_search_changed(self, text: str, delay: int = 200) -> None:
