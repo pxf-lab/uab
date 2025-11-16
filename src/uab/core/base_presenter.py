@@ -1,3 +1,4 @@
+import pathlib as pl
 from PySide6.QtWidgets import QWidget
 import os
 import subprocess
@@ -152,7 +153,11 @@ class Presenter(QWidget):
             os.startfile(asset['directory_path'])
 
     def on_reveal_in_file_system_requested(self, asset: dict) -> None:
-        pass
+        asset_path = pl.Path(asset['directory_path'])
+        if platform.system() == "Windows":
+            os.startfile(str(asset_path.parent))
+        elif platform.system() == "Darwin":
+            subprocess.call(('open', str(asset_path.parent)))
 
     def on_instantiate_requested(self, asset: dict) -> None:
         pass
