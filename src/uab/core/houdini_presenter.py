@@ -10,7 +10,7 @@ class HoudiniPresenter(Presenter):
     def __init__(self, view):
         super().__init__(view)
 
-    def spawn_asset(self, asset: dict):
+    def instantiate_asset(self, asset: dict):
         self.create_dome_light(asset["directory_path"])
 
     def create_dome_light(self, directory_path: str, light_name: str = "dome_light"):

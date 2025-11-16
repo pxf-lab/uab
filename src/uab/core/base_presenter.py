@@ -37,7 +37,7 @@ class Presenter(QWidget):
         self.widget.renderer_changed.connect(self.on_renderer_changed)
         self.widget.delete_asset_clicked.connect(self.on_delete_asset)
 
-    def spawn_asset(self, asset: dict):
+    def instantiate_asset(self, asset: dict):
         # Implemented in derived classes
         pass
 
@@ -160,7 +160,7 @@ class Presenter(QWidget):
             subprocess.call(('open', str(asset_path.parent)))
 
     def on_instantiate_requested(self, asset: dict) -> None:
-        pass
+        self.instantiate_asset(asset)
 
     def on_search_changed(self, text: str, delay: int = 200) -> None:
         if not hasattr(self, "_search_debounce_timer"):
