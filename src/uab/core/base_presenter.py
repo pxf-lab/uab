@@ -80,9 +80,9 @@ class Presenter(QWidget):
         self.widget.show_message(
             f"Renderer changed to {renderer_text}", "info", 3000)
 
-    def on_asset_thumbnail_clicked(self, asset_id: int) -> None:
-        thumbnail = self.get_thumbnail_by_id(asset_id)
-        self.current_asset = self.asset_service.get_asset_by_id(asset_id)
+    def on_asset_thumbnail_clicked(self, asset: dict) -> None:
+        thumbnail = self.get_thumbnail_by_id(asset['id'])
+        self.current_asset = asset
         self.widget.set_new_selected_thumbnail(thumbnail)
         self.widget.show_message(
             f"Asset clicked: {self.current_asset['name']}", "info", 3000)
@@ -90,8 +90,7 @@ class Presenter(QWidget):
     def get_thumbnail_by_id(self, id: int) -> Thumbnail:
         return next((p for p in self.thumbnails if p.asset_id == id), None)
 
-    def on_asset_thumbnail_double_clicked(self, asset_id: int):
-        asset = self.asset_service.get_asset_by_id(asset_id)
+    def on_asset_thumbnail_double_clicked(self, asset: dict):
         self.widget.show_asset_detail(asset)
 
     def on_back_clicked(self, widget: QWidget):

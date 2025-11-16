@@ -72,11 +72,11 @@ class LargePreviewPopup(QDialog):
 
 
 class Thumbnail(QWidget):
-    asset_clicked = Signal(int)
-    asset_double_clicked = Signal(int)
-    open_image_requested = Signal(int)
-    reveal_in_file_system_requested = Signal(int)
-    instantiate_requested = Signal(int)
+    asset_clicked = Signal(dict)
+    asset_double_clicked = Signal(dict)
+    open_image_requested = Signal(dict)
+    reveal_in_file_system_requested = Signal(dict)
+    instantiate_requested = Signal(dict)
 
     def __init__(
         self,
@@ -261,15 +261,15 @@ class Thumbnail(QWidget):
                     modifiers & Qt.KeyboardModifier.ControlModifier
                     or modifiers & Qt.KeyboardModifier.MetaModifier
                 ):
-                    self.instantiate_requested.emit(self.asset_id)
+                    self.instantiate_requested.emit(self.asset)
                 else:
-                    self.asset_clicked.emit(self.asset_id)
+                    self.asset_clicked.emit(self.asset)
         super().mousePressEvent(e)
 
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             if self.image_container.geometry().contains(e.pos()):
-                self.asset_double_clicked.emit(self.asset_id)
+                self.asset_double_clicked.emit(self.asset)
         super().mouseDoubleClickEvent(e)
 
     def contextMenuEvent(self, e):
@@ -278,17 +278,17 @@ class Thumbnail(QWidget):
 
         open_image_action = menu.addAction("Open Image")
         open_image_action.triggered.connect(
-            lambda: self.open_image_requested.emit(self.asset_id)
+            lambda: self.open_image_requested.emit(self.asset)
         )
 
         reveal_action = menu.addAction("Reveal in File System")
         reveal_action.triggered.connect(
-            lambda: self.reveal_in_file_system_requested.emit(self.asset_id)
+            lambda: self.reveal_in_file_system_requested.emit(self.asset)
         )
 
         instantiate_action = menu.addAction("Instantiate")
         instantiate_action.triggered.connect(
-            lambda: self.instantiate_requested.emit(self.asset_id)
+            lambda: self.instantiate_requested.emit(self.asset)
         )
 
         menu.exec(e.globalPos())
