@@ -287,11 +287,13 @@ class Thumbnail(QWidget):
             # This is necessary because the callback is a lambda function
             # that captures the option variable, and if the lambda is called
             # at execution time, the option variable will be the last value it had,
-            # not the intended option.
+            # not the intended option, since the lambda accesses it by reference.
+            # Example: without this, if the last optionin the list is "Open Image",
+            # then all of the callbacks will call the open image logic.
             # `checked=False` is necessary since triggered emits a Signal with a bool,
             # which is caught by the lambda, so must be handled to avoid a `TypeError`.
             action.triggered.connect(
-                lambda checked=False, callback=option: callback["callback"](self.asset))
+                lambda checked=False, logic=option: logic["callback"](self.asset))
         menu.exec(position)
 
     def set_selected(self, selected: bool):
