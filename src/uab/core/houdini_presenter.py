@@ -34,28 +34,22 @@ class HoudiniPresenter(Presenter):
 
     @Slot(object)
     def set_current_context_menu_options(self, context: object) -> List[dict]:
+        options = [
+            {"label": "Instantiate", "callback": self.on_instantiate_requested,
+                "shortcut": "Ctrl+LMB"},
+            {"label": "Open Image", "callback": self.on_open_image_requested,
+                "shortcut": ""},
+            {"label": "Reveal in File System",
+                "callback": self.on_reveal_in_file_system_requested,
+                "shortcut": ""},
+        ]
         if self._is_dome_light_currently_selected():
-            options = [
-                {"label": "Instantiate", "callback": self.on_instantiate_requested,
-                    "shortcut": "Ctrl+LMB"},
-                {"label": "Set Texture", "callback": self._set_dome_light_texture,
-                    "shortcut": "Alt+LMB"},
-                {"label": "Open Image", "callback": self.on_open_image_requested,
-                    "shortcut": ""},
-                {"label": "Reveal in File System",
-                    "callback": self.on_reveal_in_file_system_requested,
-                    "shortcut": ""},
-            ]
-        else:
-            options = [
-                {"label": "Instantiate", "callback": self.on_instantiate_requested,
-                    "shortcut": "Ctrl+LMB"},
-                {"label": "Open Image", "callback": self.on_open_image_requested,
-                    "shortcut": ""},
-                {"label": "Reveal in File System",
-                    "callback": self.on_reveal_in_file_system_requested,
-                    "shortcut": ""},
-            ]
+            set_texture_option = {
+                "label": "Set Texture",
+                "callback": self._set_dome_light_texture,
+                "shortcut": "Alt+LMB"
+            }
+            options.insert(0, set_texture_option)
         context["object"].create_context_menu_options(
             options, context["position"])
         return options
