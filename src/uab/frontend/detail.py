@@ -269,7 +269,7 @@ class Detail(QWidget):
 
         # TODO: @thumbnail.py has a method that does exactly the same thing.
         pixmap = QPixmap()
-        directory_path = Path(asset.get('directory_path', ''))
+        directory_path = Path(asset.get('path', ''))
         if directory_path and directory_path.exists():
             try:
                 byte_image = utils.hdr_to_preview(

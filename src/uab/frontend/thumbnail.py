@@ -169,7 +169,7 @@ class Thumbnail(QWidget):
     def _load_thumbnail(self) -> QPixmap:
         """Load thumbnail from asset's directory_path or preview_image_file_path."""
         pixmap = QPixmap()
-        dir_path = self.asset.get('directory_path') or ''
+        dir_path = self.asset.get('path') or ''
 
         # Normalize the directory path
         norm = os.path.normpath(str(dir_path)) if dir_path else ''
