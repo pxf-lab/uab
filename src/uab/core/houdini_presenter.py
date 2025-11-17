@@ -65,14 +65,12 @@ class HoudiniPresenter(Presenter):
         return nodes[0] if nodes else None
 
     def _is_dome_light_currently_selected(self) -> bool:
-        if not self._get_currently_selected_node():
+        current_node = self._get_currently_selected_node()
+        if not current_node:
             return False
-        print(
-            f"Currently selected node: {self._get_currently_selected_node().name()} of type {self._get_currently_selected_node().type().name()}")
-        return self._get_currently_selected_node().type().name() == "domelight::3.0"
+        return current_node.type().name() == "domelight::3.0"
 
     def _set_dome_light_texture(self, asset: dict):
-        print(f"Setting texture for dome light: {asset['name']}")
         light = self._get_currently_selected_node()
         if not light:
             return
