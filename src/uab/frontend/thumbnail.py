@@ -77,6 +77,7 @@ class Thumbnail(QWidget):
     open_image_requested = Signal(dict)
     reveal_in_file_system_requested = Signal(dict)
     instantiate_requested = Signal(dict)
+    context_menu_requested = Signal(object)
 
     def __init__(
         self,
@@ -274,24 +275,25 @@ class Thumbnail(QWidget):
 
     def contextMenuEvent(self, e):
         """Show context menu on right-click."""
-        menu = QMenu(self)
+        # menu = QMenu(self)
 
-        open_image_action = menu.addAction("Open Image")
-        open_image_action.triggered.connect(
-            lambda: self.open_image_requested.emit(self.asset)
-        )
+        # open_image_action = menu.addAction("Open Image")
+        # open_image_action.triggered.connect(
+        #     lambda: self.open_image_requested.emit(self.asset)
+        # )
 
-        reveal_action = menu.addAction("Reveal in File System")
-        reveal_action.triggered.connect(
-            lambda: self.reveal_in_file_system_requested.emit(self.asset)
-        )
+        # reveal_action = menu.addAction("Reveal in File System")
+        # reveal_action.triggered.connect(
+        #     lambda: self.reveal_in_file_system_requested.emit(self.asset)
+        # )
 
-        instantiate_action = menu.addAction("Instantiate")
-        instantiate_action.triggered.connect(
-            lambda: self.instantiate_requested.emit(self.asset)
-        )
+        # instantiate_action = menu.addAction("Instantiate")
+        # instantiate_action.triggered.connect(
+        #     lambda: self.instantiate_requested.emit(self.asset)
+        # )
 
-        menu.exec(e.globalPos())
+        # menu.exec(e.globalPos())
+        self.context_menu_requested.emit(self)
 
     def set_selected(self, selected: bool):
         self.is_selected = selected

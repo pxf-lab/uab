@@ -1,5 +1,5 @@
 import pathlib as pl
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QObject
 import os
 import subprocess
 import platform
@@ -9,7 +9,7 @@ from uab.frontend.thumbnail import Thumbnail
 from uab.backend.asset_service import AssetService
 
 
-class Presenter(QWidget):
+class Presenter(QObject):
     def __init__(self, view):
         super().__init__()
         LOCAL_ASSETS_DIR = "/Users/dev/Assets"
@@ -36,6 +36,9 @@ class Presenter(QWidget):
         self.widget.import_clicked.connect(self.on_import_asset)
         self.widget.renderer_changed.connect(self.on_renderer_changed)
         self.widget.delete_asset_clicked.connect(self.on_delete_asset)
+
+    def get_current_context_menu_options(self) -> List[dict]:
+        pass
 
     def instantiate_asset(self, asset: dict):
         # Implemented in derived classes
@@ -95,9 +98,6 @@ class Presenter(QWidget):
 
     def on_asset_thumbnail_double_clicked(self, asset: dict):
         self.widget.show_asset_detail(asset)
-
-    def on_back_clicked(self, widget: QWidget):
-        pass
 
     def on_edit_metadata(self, asset: dict):
         pass
