@@ -48,8 +48,8 @@ class Presenter(QObject):
             options, thumbnail_context_menu_event["position"])
 
     def instantiate_asset(self, asset: dict):
-        # Implemented in derived classes
-        pass
+        raise ImplementedByDerivedClassError(
+            "instantiate_asset method must be implemented by the derived class")
 
     def on_import_asset(self, asset_path):
         if not asset_path:
@@ -193,3 +193,10 @@ class Presenter(QObject):
 
     def on_filter_changed(self, text: str):
         print(f"Filter changed: {text}")
+
+
+class ImplementedByDerivedClassError(Exception):
+    """
+    Exception raised when a method that must be implemented by the derived class is called.
+    """
+    pass
