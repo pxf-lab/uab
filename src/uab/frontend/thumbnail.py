@@ -77,6 +77,9 @@ class Thumbnail(QWidget):
     open_image_requested = Signal(dict)
     reveal_in_file_system_requested = Signal(dict)
     instantiate_requested = Signal(dict)
+    # This has to be emitted as an object; emitting as a dict triggers a slot resolution
+    # issue in Houdini, where it looks for a QVariantMap, since PySide6 automatically
+    # converts the signal.
     context_menu_requested = Signal(object)
 
     def __init__(
@@ -292,7 +295,7 @@ class Thumbnail(QWidget):
             # `checked=False` is necessary since triggered emits a Signal with a bool,
             # which is caught by the lambda, so must be handled to avoid a `TypeError`.
             action.triggered.connect(
-                lambda checked=False, logic=option: logic["callback"](self.asset))
+                lambda checked=False, opt=option: opt["callback"](self.asset))
         menu.exec(position)
 
     def set_selected(self, selected: bool):
