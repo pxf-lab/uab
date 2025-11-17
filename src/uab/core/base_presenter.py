@@ -49,7 +49,7 @@ class Presenter(QObject):
 
     def instantiate_asset(self, asset: dict):
         raise ImplementedByDerivedClassError(
-            "instantiate_asset method must be implemented by the derived class")
+            self.__class__.__name__, "instantiate_asset")
 
     def on_import_asset(self, asset_path):
         if not asset_path:
@@ -199,4 +199,10 @@ class ImplementedByDerivedClassError(Exception):
     """
     Exception raised when a method that must be implemented by the derived class is called.
     """
-    pass
+
+    def __init__(self, class_name: str, method_name: str):
+        self.message = f"<{method_name}> must be implemented by a derived class of <{class_name}>."
+        super().__init__(self.message)
+
+    def __str__(self):
+        return self.message
