@@ -54,8 +54,7 @@ class MainWidget(QWidget):
 
         # Configure split sizes, collapsibility
         self.main_splitter.setCollapsible(0, False)
-        self.main_splitter.setCollapsible(1, True)
-        self.main_splitter.setSizes([1200, 0])
+        self.main_splitter.setSizes([1200])
 
         self.layout.addWidget(self.main_splitter)
 
