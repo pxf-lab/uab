@@ -1,5 +1,6 @@
 import pathlib as pl
 import requests
+from datetime import datetime
 
 
 class AssetService:
@@ -9,15 +10,15 @@ class AssetService:
 
     def get_assets(self):
         try:
-            response = requests.get(self.url + "/assets")
+            response = requests.get(f"{self.url}/assets")
             response.raise_for_status()
             return response.json()
-        except Exception as e:
-            print(e)
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching assets: {e}")
 
     def get_asset_by_id(self, asset_id: int):
         try:
-            response = requests.get(self.url + f"/assets/{asset_id}")
+            response = requests.get(f"{self.url}/assets/{asset_id}")
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -25,7 +26,8 @@ class AssetService:
 
     def search_assets(self, text: str):
         try:
-            response = requests.get(self.url + f"/assets/search?name={text}")
+            response = requests.get(
+                f"{self.url}/assets/search", params={"name": text})
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -36,25 +38,37 @@ class AssetService:
         self.asset_directory_path = pl.Path(directory_path)
 
     def add_asset_to_db(self, asset_request_body: dict):
-        asset_name = asset_request_body.get('name', 'unknown')
-        asset_path = asset_request_body.get('directory_path', '')
+        asset_name = asset_request_body.get("name", "unknown")
+        asset_path = asset_request_body.get("path", "")
         try:
             response = requests.post(
-                self.url + "/assets", json=asset_request_body)
-            response.raise_for_status()  # Raise an exception for bad status codes
+                f"{self.url}/assets", json=asset_request_body)
+            response.raise_for_status()
+            return response.json()
         except requests.exceptions.RequestException as e:
             print(f"Error posting asset {asset_name} at {asset_path}: {e}")
 
     def remove_asset_from_db(self, asset_id: int):
         try:
-            response = requests.delete(self.url + f"/assets/{asset_id}")
+            response = requests.delete(f"{self.url}/assets/{asset_id}")
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             print(f"Error deleting asset with id {asset_id}: {e}")
 
     @staticmethod
-    def create_asset_req_body_from_path(asset_path: str):
+    def create_asset_req_body_from_path(
+        asset_path: str,
+        tags: list[str] | None = None,
+        author: str | None = None,
+    ):
+        """Create a request body matching the new schema."""
         return {
-            'name': pl.Path(asset_path).name,
-            'directory_path': asset_path
+            "name": pl.Path(asset_path).name,
+            "path": str(asset_path),
+            "description": None,
+            "preview_image_file_path": None,
+            "tags": tags or [],
+            "author": author,
+            "date_created": datetime.now().isoformat(),
+            "date_added": datetime.now().isoformat(),
         }

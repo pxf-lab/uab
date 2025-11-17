@@ -304,3 +304,6 @@ __marimo__/
 *.db
 uv.lock
 .DS_Store
+
+# Dev database migration script
+migration.py
