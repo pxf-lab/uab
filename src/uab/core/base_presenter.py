@@ -1,5 +1,5 @@
 import pathlib as pl
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QPoint
 import os
 import subprocess
 import platform
@@ -37,8 +37,15 @@ class Presenter(QObject):
         self.widget.renderer_changed.connect(self.on_renderer_changed)
         self.widget.delete_asset_clicked.connect(self.on_delete_asset)
 
-    def get_current_context_menu_options(self) -> List[dict]:
-        pass
+    def set_current_context_menu_options(self, thumbnail_context_menu_event: dict) -> List[dict]:
+        options = [
+            {"label": "Open Image", "callback": self.on_open_image_requested},
+            {"label": "Reveal in File System",
+                "callback": self.on_reveal_in_file_system_requested},
+            {"label": "Instantiate", "callback": self.on_instantiate_requested},
+        ]
+        thumbnail_context_menu_event["object"].create_context_menu_options(
+            options, thumbnail_context_menu_event["position"])
 
     def instantiate_asset(self, asset: dict):
         # Implemented in derived classes
@@ -140,11 +147,14 @@ class Presenter(QObject):
                 self.on_reveal_in_file_system_requested)
             asset_thumbnail.instantiate_requested.connect(
                 self.on_instantiate_requested)
+            asset_thumbnail.context_menu_requested.connect(
+                self.set_current_context_menu_options)
             thumbnails.append(asset_thumbnail)
 
         return thumbnails
 
     def on_open_image_requested(self, asset: dict) -> None:
+        print(f"Opening image for asset: {asset['name']}")
         self.widget.show_message(
             f"Opening image for asset: {asset['name']}", "info", 3000)
         if platform.system() == 'Darwin':
@@ -153,6 +163,7 @@ class Presenter(QObject):
             os.startfile(asset['directory_path'])
 
     def on_reveal_in_file_system_requested(self, asset: dict) -> None:
+        print(f"Revealing in file system for asset: {asset['name']}")
         asset_path = pl.Path(asset['directory_path'])
         if platform.system() == "Windows":
             os.startfile(str(asset_path.parent))
@@ -160,6 +171,7 @@ class Presenter(QObject):
             subprocess.call(('open', str(asset_path.parent)))
 
     def on_instantiate_requested(self, asset: dict) -> None:
+        print(f"Instantiating asset: {asset['name']}")
         self.instantiate_asset(asset)
 
     def on_search_changed(self, text: str, delay: int = 200) -> None:

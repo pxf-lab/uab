@@ -1,6 +1,6 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import os
-from PySide6.QtCore import Qt, QEvent, Signal, QTimer
+from PySide6.QtCore import QPoint, Qt, QEvent, Signal, QTimer
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtWidgets import (
     QSizePolicy,
@@ -77,7 +77,7 @@ class Thumbnail(QWidget):
     open_image_requested = Signal(dict)
     reveal_in_file_system_requested = Signal(dict)
     instantiate_requested = Signal(dict)
-    context_menu_requested = Signal(object)
+    context_menu_requested = Signal(dict)
 
     def __init__(
         self,
@@ -275,25 +275,18 @@ class Thumbnail(QWidget):
 
     def contextMenuEvent(self, e):
         """Show context menu on right-click."""
-        # menu = QMenu(self)
+        self.context_menu_requested.emit(
+            {"object": self, "position": e.globalPos()})
 
-        # open_image_action = menu.addAction("Open Image")
-        # open_image_action.triggered.connect(
-        #     lambda: self.open_image_requested.emit(self.asset)
-        # )
-
-        # reveal_action = menu.addAction("Reveal in File System")
-        # reveal_action.triggered.connect(
-        #     lambda: self.reveal_in_file_system_requested.emit(self.asset)
-        # )
-
-        # instantiate_action = menu.addAction("Instantiate")
-        # instantiate_action.triggered.connect(
-        #     lambda: self.instantiate_requested.emit(self.asset)
-        # )
-
-        # menu.exec(e.globalPos())
-        self.context_menu_requested.emit(self)
+    def create_context_menu_options(self, options: List[dict], position: QPoint):
+        menu = QMenu(self)
+        for option in options:
+            print(option)
+            action = menu.addAction(option["label"])
+            # Capture option by value using default parameter to avoid closure issue
+            action.triggered.connect(
+                lambda checked=False, opt=option: opt["callback"](self.asset))
+        menu.exec(position)
 
     def set_selected(self, selected: bool):
         self.is_selected = selected
