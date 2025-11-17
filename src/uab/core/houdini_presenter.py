@@ -15,7 +15,7 @@ class HoudiniPresenter(Presenter):
 
     def instantiate_asset(self, asset: dict):
         self.create_light_with_texture(
-            "domelight", asset["directory_path"], f"instantiated_dome_light")
+            "domelight", asset["path"], f"instantiated_dome_light")
         self.widget.show_message(
             f"Instantiated: {asset['name']}", "info", 3000)
 
@@ -24,11 +24,11 @@ class HoudiniPresenter(Presenter):
         self.widget.show_message(
             f"Texture replaced with: {asset['name']}", "info", 3000)
 
-    def create_light_with_texture(self, light_type: str, directory_path: str, light_name: str):
+    def create_light_with_texture(self, light_type: str, path: str, light_name: str):
         stage = hou.node("/stage")
         light = stage.createNode(light_type, node_name=light_name)
         tex = light.parm("xn__inputstexturefile_r3ah")
-        tex.set(directory_path)
+        tex.set(path)
         light.moveToGoodPosition()
         return light
 
@@ -69,5 +69,5 @@ class HoudiniPresenter(Presenter):
         if not light:
             return
         tex = light.parm("xn__inputstexturefile_r3ah")
-        tex.set(asset["directory_path"])
+        tex.set(asset["path"])
         return light

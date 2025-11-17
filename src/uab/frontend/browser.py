@@ -156,6 +156,7 @@ class Browser(QWidget):
         icon.setStyleSheet("font-size: 64pt; color: #666;")
         layout.addWidget(icon)
 
+        # BUG: if an asset is added to a fresh installation, this should be removed.
         text = QLabel("No assets to display")
         text.setStyleSheet(
             "color: #808080; font-size: 16pt; font-weight: 500;")
