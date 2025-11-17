@@ -189,14 +189,14 @@ class Thumbnail(QWidget):
             if ev.type() == QEvent.Type.Enter:
                 self._hover = True
                 self._update_style()
-                self._show_large_preview()
+                self._is_user_hovering_thumbnail()
             elif ev.type() == QEvent.Type.Leave:
                 self._hover = False
                 self._update_style()
                 self._hide_large_preview_delayed()
         return super().eventFilter(obj, ev)
 
-    def _show_large_preview(self):
+    def _is_user_hovering_thumbnail(self):
         if self.thumbnail.isNull():
             return
 
@@ -209,10 +209,10 @@ class Thumbnail(QWidget):
         # Wait 1s before showing preview
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
-        self._hover_timer.timeout.connect(self._actually_show_large_preview)
+        self._hover_timer.timeout.connect(self._show_large_preview_window)
         self._hover_timer.start(1000)
 
-    def _actually_show_large_preview(self):
+    def _show_large_preview_window(self):
         self._large_preview.set_pixmap(self.thumbnail)
 
         popup = self._large_preview
