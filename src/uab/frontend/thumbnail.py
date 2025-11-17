@@ -1,7 +1,7 @@
 from typing import Optional, Dict, List
 import os
 from PySide6.QtCore import QPoint, Qt, QEvent, Signal, QTimer
-from PySide6.QtGui import QPixmap, QColor
+from PySide6.QtGui import QKeySequence, QPixmap, QColor
 from PySide6.QtWidgets import (
     QSizePolicy,
     QWidget,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QDialog,
     QMenu,
+    QWidgetAction,
 )
 from uab.core import utils
 
@@ -283,7 +284,8 @@ class Thumbnail(QWidget):
     def create_context_menu_options(self, options: List[dict], position: QPoint):
         menu = QMenu(self)
         for option in options:
-            action = menu.addAction(option["label"])
+            action = self.make_menu_action(
+                option["label"], option["shortcut"], menu)
             # Using the default parameter ensures that the callback is defined
             # at definition time, not at execution time.
             # This is necessary because the callback is a lambda function
@@ -296,7 +298,45 @@ class Thumbnail(QWidget):
             # which is caught by the lambda, so must be handled to avoid a `TypeError`.
             action.triggered.connect(
                 lambda checked=False, opt=option: opt["callback"](self.asset))
+            menu.addAction(action)
         menu.exec(position)
+
+    def make_menu_action(self, text, shortcut, parent):
+        wa = QWidgetAction(parent)
+
+        class HoverableWidget(QWidget):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+                self.setStyleSheet("""
+                    QWidget {
+                        background: transparent;
+                        border-radius: 2px;
+                        padding: 2px;
+                    }
+                    QWidget:hover {
+                        background: #34425C;
+                        padding: 2px;
+                    }
+                """)
+
+        w = HoverableWidget()
+        layout = QHBoxLayout(w)
+        layout.setContentsMargins(6, 2, 6, 2)
+
+        label_text = QLabel(text)
+        label_shortcut = QLabel(QKeySequence(shortcut).toString())
+
+        f = label_shortcut.font()
+        f.setItalic(True)
+        label_shortcut.setFont(f)
+
+        layout.addWidget(label_text)
+        layout.addStretch()
+        layout.addWidget(label_shortcut)
+
+        wa.setDefaultWidget(w)
+        return wa
 
     def set_selected(self, selected: bool):
         self.is_selected = selected

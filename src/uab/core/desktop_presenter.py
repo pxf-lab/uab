@@ -12,9 +12,11 @@ class DesktopPresenter(Presenter):
 
     def set_current_context_menu_options(self, thumbnail_context_menu_event: dict) -> List[dict]:
         options = [
-            {"label": "Open Image", "callback": self.on_open_image_requested},
+            {"label": "Open Image", "callback": self.on_open_image_requested,
+                "shortcut": "Ctrl + O"},
             {"label": "Reveal in File System",
-                "callback": self.on_reveal_in_file_system_requested},
+                "callback": self.on_reveal_in_file_system_requested,
+                "shortcut": "Ctrl+R"},
         ]
         thumbnail_context_menu_event["object"].create_context_menu_options(
             options, thumbnail_context_menu_event["position"])

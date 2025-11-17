@@ -29,25 +29,33 @@ class HoudiniPresenter(Presenter):
     def set_current_context_menu_options(self, context: object) -> List[dict]:
         if self._is_dome_light_currently_selected():
             options = [
-                {"label": "Open Image", "callback": self.on_open_image_requested},
+                {"label": "Open Image", "callback": self.on_open_image_requested,
+                    "shortcut": "Ctrl+O"},
                 {"label": "Reveal in File System",
-                    "callback": self.on_reveal_in_file_system_requested},
-                {"label": "Instantiate", "callback": self.on_instantiate_requested},
-                {"label": "Set Texture", "callback": self._set_dome_light_texture},
+                    "callback": self.on_reveal_in_file_system_requested,
+                    "shortcut": "Ctrl+R"},
+                {"label": "Instantiate", "callback": self.on_instantiate_requested,
+                    "shortcut": "Ctrl+I"},
+                {"label": "Set Texture", "callback": self._set_dome_light_texture,
+                    "shortcut": "Ctrl+T"},
             ]
         else:
             options = [
-                {"label": "Open Image", "callback": self.on_open_image_requested},
+                {"label": "Open Image", "callback": self.on_open_image_requested,
+                    "shortcut": "Ctrl+O"},
                 {"label": "Reveal in File System",
-                    "callback": self.on_reveal_in_file_system_requested},
-                {"label": "Instantiate", "callback": self.on_instantiate_requested},
+                    "callback": self.on_reveal_in_file_system_requested,
+                    "shortcut": "Ctrl+R"},
+                {"label": "Instantiate", "callback": self.on_instantiate_requested,
+                    "shortcut": "Ctrl+I"},
             ]
         context["object"].create_context_menu_options(
             options, context["position"])
         return options
 
-    def _get_currently_selected_node(self) -> hou.Node:
-        return hou.selectedNodes()[0] if hou.selectedNodes() else None
+    def _get_currently_selected_node(self):
+        nodes = hou.selectedNodes()
+        return nodes[0] if nodes else None
 
     def _is_dome_light_currently_selected(self) -> bool:
         if not self._get_currently_selected_node():
