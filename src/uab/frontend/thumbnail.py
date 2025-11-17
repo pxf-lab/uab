@@ -281,11 +281,17 @@ class Thumbnail(QWidget):
     def create_context_menu_options(self, options: List[dict], position: QPoint):
         menu = QMenu(self)
         for option in options:
-            print(option)
             action = menu.addAction(option["label"])
-            # Capture option by value using default parameter to avoid closure issue
+            # Using the default parameter ensures that the callback is defined
+            # at definition time, not at execution time.
+            # This is necessary because the callback is a lambda function
+            # that captures the option variable, and if the lambda is called
+            # at execution time, the option variable will be the last value it had,
+            # not the intended option.
+            # `checked=False` is necessary since triggered emits a Signal with a bool,
+            # which is caught by the lambda, so must be handled to avoid a `TypeError`.
             action.triggered.connect(
-                lambda checked=False, opt=option: opt["callback"](self.asset))
+                lambda checked=False, callback=option: callback["callback"](self.asset))
         menu.exec(position)
 
     def set_selected(self, selected: bool):
