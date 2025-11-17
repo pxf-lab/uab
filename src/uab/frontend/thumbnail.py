@@ -77,7 +77,7 @@ class Thumbnail(QWidget):
     open_image_requested = Signal(dict)
     reveal_in_file_system_requested = Signal(dict)
     instantiate_requested = Signal(dict)
-    context_menu_requested = Signal(dict)
+    context_menu_requested = Signal(object)
 
     def __init__(
         self,
@@ -206,8 +206,7 @@ class Thumbnail(QWidget):
         except AttributeError:
             pass
 
-        # Wait 1 s before showing preview
-        from PySide6.QtCore import QTimer
+        # Wait 1s before showing preview
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.timeout.connect(self._actually_show_large_preview)

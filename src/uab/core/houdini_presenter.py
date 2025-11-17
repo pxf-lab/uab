@@ -3,6 +3,9 @@ try:
     import hou
 except ImportError:
     pass
+from typing import List
+
+from PySide6.QtCore import Slot
 from uab.core.base_presenter import Presenter
 
 
@@ -20,3 +23,15 @@ class HoudiniPresenter(Presenter):
         tex.set(directory_path)
         dome.moveToGoodPosition()
         return dome
+
+    @Slot(object)
+    def set_current_context_menu_options(self, context: object) -> List[dict]:
+        options = [
+            {"label": "Open Image", "callback": self.on_open_image_requested},
+            {"label": "Reveal in File System",
+                "callback": self.on_reveal_in_file_system_requested},
+            {"label": "Instantiate", "callback": self.on_instantiate_requested},
+        ]
+        context["object"].create_context_menu_options(
+            options, context["position"])
+        return options
