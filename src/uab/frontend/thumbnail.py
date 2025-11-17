@@ -78,6 +78,7 @@ class Thumbnail(QWidget):
     open_image_requested = Signal(dict)
     reveal_in_file_system_requested = Signal(dict)
     instantiate_requested = Signal(dict)
+    replace_texture_requested = Signal(dict)
     # This has to be emitted as an object; emitting as a dict triggers a slot resolution
     # issue in Houdini, where it looks for a QVariantMap, since PySide6 automatically
     # converts the signal.
@@ -266,6 +267,8 @@ class Thumbnail(QWidget):
                     or modifiers & Qt.KeyboardModifier.MetaModifier
                 ):
                     self.instantiate_requested.emit(self.asset)
+                elif modifiers & Qt.KeyboardModifier.AltModifier:
+                    self.replace_texture_requested.emit(self.asset)
                 else:
                     self.asset_clicked.emit(self.asset)
         super().mousePressEvent(e)

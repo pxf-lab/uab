@@ -15,7 +15,14 @@ class HoudiniPresenter(Presenter):
 
     def instantiate_asset(self, asset: dict):
         self.create_light_with_texture(
-            "domelight", asset["directory_path"], f"dome_light_{asset['name']}")
+            "domelight", asset["directory_path"], f"instantiated_dome_light")
+        self.widget.show_message(
+            f"Instantiated: {asset['name']}", "info", 3000)
+
+    def replace_texture(self, asset: dict):
+        self._set_dome_light_texture(asset)
+        self.widget.show_message(
+            f"Texture replaced with: {asset['name']}", "info", 3000)
 
     def create_light_with_texture(self, light_type: str, directory_path: str, light_name: str):
         stage = hou.node("/stage")

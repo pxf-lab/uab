@@ -10,6 +10,10 @@ class DesktopPresenter(Presenter):
         self.widget.show_message(
             f"You must be within an application to instantiate an asset.", "info", 3000)
 
+    def replace_texture(self, asset: dict):
+        self.widget.show_message(
+            f"You must be within an application to replace a texture.", "info", 3000)
+
     def set_current_context_menu_options(self, thumbnail_context_menu_event: dict) -> List[dict]:
         options = [
             {"label": "Open Image", "callback": self.on_open_image_requested,

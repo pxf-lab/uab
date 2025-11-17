@@ -143,6 +143,8 @@ class Presenter(QObject):
                 self.on_instantiate_requested)
             asset_thumbnail.context_menu_requested.connect(
                 self.set_current_context_menu_options)
+            asset_thumbnail.replace_texture_requested.connect(
+                self.on_replace_texture_requested)
             thumbnails.append(asset_thumbnail)
 
         return thumbnails
@@ -167,6 +169,14 @@ class Presenter(QObject):
     def on_instantiate_requested(self, asset: dict) -> None:
         print(f"Instantiating asset: {asset['name']}")
         self.instantiate_asset(asset)
+
+    def on_replace_texture_requested(self, asset: dict) -> None:
+        print(f"Replacing texture for asset: {asset['name']}")
+        self.replace_texture(asset)
+
+    def replace_texture(self, asset: dict) -> None:
+        raise ImplementedByDerivedClassError(
+            self.__class__.__name__, "replace_texture")
 
     def on_search_changed(self, text: str, delay: int = 200) -> None:
         if not hasattr(self, "_search_debounce_timer"):
