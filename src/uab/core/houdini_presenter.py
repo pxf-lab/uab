@@ -29,25 +29,25 @@ class HoudiniPresenter(Presenter):
     def set_current_context_menu_options(self, context: object) -> List[dict]:
         if self._is_dome_light_currently_selected():
             options = [
+                {"label": "Instantiate", "callback": self.on_instantiate_requested,
+                    "shortcut": "Ctrl+LMB"},
+                {"label": "Set Texture", "callback": self._set_dome_light_texture,
+                    "shortcut": "Alt+LMB"},
                 {"label": "Open Image", "callback": self.on_open_image_requested,
-                    "shortcut": "Ctrl+O"},
+                    "shortcut": ""},
                 {"label": "Reveal in File System",
                     "callback": self.on_reveal_in_file_system_requested,
-                    "shortcut": "Ctrl+R"},
-                {"label": "Instantiate", "callback": self.on_instantiate_requested,
-                    "shortcut": "Ctrl+I"},
-                {"label": "Set Texture", "callback": self._set_dome_light_texture,
-                    "shortcut": "Ctrl+T"},
+                    "shortcut": ""},
             ]
         else:
             options = [
+                {"label": "Instantiate", "callback": self.on_instantiate_requested,
+                    "shortcut": "Ctrl+LMB"},
                 {"label": "Open Image", "callback": self.on_open_image_requested,
-                    "shortcut": "Ctrl+O"},
+                    "shortcut": ""},
                 {"label": "Reveal in File System",
                     "callback": self.on_reveal_in_file_system_requested,
-                    "shortcut": "Ctrl+R"},
-                {"label": "Instantiate", "callback": self.on_instantiate_requested,
-                    "shortcut": "Ctrl+I"},
+                    "shortcut": ""},
             ]
         context["object"].create_context_menu_options(
             options, context["position"])

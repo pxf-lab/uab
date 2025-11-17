@@ -1,7 +1,7 @@
 from typing import Optional, Dict, List
 import os
 from PySide6.QtCore import QPoint, Qt, QEvent, Signal, QTimer
-from PySide6.QtGui import QKeySequence, QPixmap, QColor
+from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtWidgets import (
     QSizePolicy,
     QWidget,
@@ -325,7 +325,7 @@ class Thumbnail(QWidget):
         layout.setContentsMargins(6, 2, 6, 2)
 
         label_text = QLabel(text)
-        label_shortcut = QLabel(QKeySequence(shortcut).toString())
+        label_shortcut = QLabel(shortcut)
 
         f = label_shortcut.font()
         f.setItalic(True)
