@@ -4,82 +4,143 @@ import sys
 import requests
 import time
 import threading
-import uvicorn
 from PySide6.QtWidgets import QApplication
 
 from uab.frontend.main_widget import MainWidget
 from uab.frontend.main_window import MainWindow
-from uab.backend.server import app
+from uab.core.utils import is_macos
 
-# Global server reference
-_server_instance = None
-_server_thread = None
+_SERVER_PROCESS = None
+_SERVER_PORT = 8000
+_SERVER_HOST = "127.0.0.1"
 
 
 def run():
     is_houdini = _get_current_dcc() == "hou"
 
-    server = _start_server()
+    # Start server (detached process if not already running)
+    server_proc = _start_server()
 
     if is_houdini:
-        # In Houdini, keep the server running and return the widget
-        global _server_instance
-        _server_instance = server
+        global _SERVER_PROCESS
+        _SERVER_PROCESS = server_proc
         result = _start_gui()
         return result
     else:
-        # In desktop mode, clean up server when GUI closes
         try:
             result = _start_gui()
             return result
         finally:
-            print("Shutting down server...")
-            _stop_server(server)
-            print("Server shut down.")
+            print("Desktop mode cleanup: requesting server shutdown...")
+            _stop_server(server_proc)
+            print("Server stopped.")
 
 
 def _start_server():
-    """Start the uvicorn FastAPI server in a background thread."""
-    global _server_thread
+    """Ensure the FastAPI server is running (spawn detached process if needed)."""
+    global _SERVER_PORT, _SERVER_HOST
 
-    print(app.title)
-    config = uvicorn.Config(app, host="127.0.0.1", port=8000, reload=False)
-    server = uvicorn.Server(config)
+    server_url = f"http://{_SERVER_HOST}:{_SERVER_PORT}"
 
-    def _run_server():
-        print("Starting server thread...")
-        server.run()
-        print("Server stopped.")
+    if _is_server_alive(server_url):
+        print("Server already running, reusing existing instance.")
+        return None
 
-    is_houdini = _get_current_dcc() == "hou"
-    thread = threading.Thread(target=_run_server, daemon=(not is_houdini))
-    thread.start()
-    _server_thread = thread
+    print("Starting detached server subprocess...")
 
-    SERVER_URL = "http://127.0.0.1:8000"
-    if not _wait_for_server(SERVER_URL, timeout=10):
-        raise RuntimeError("Server failed to start in time.")
+    # Detached subprocess
+    # Cannot use sys.executable because it will use Houdini's Python interpreter, which will launch a second Houdini instance and not the server.
+    PYTHON_BIN = os.environ.get(
+        "UAB_PYTHON", "/Users/dev/Projects/uab/.venv/bin/python")
+    cmd = [
+        PYTHON_BIN,
+        "-m",
+        "uvicorn",
+        "uab.backend.server:app",
+        "--host",
+        _SERVER_HOST,
+        "--port",
+        str(_SERVER_PORT),
+    ]
 
-    print("Server started and reachable.")
-    return server
+    # TODO: support linux
+    if not is_macos():
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        creationflags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        server_proc = subprocess.Popen(
+            cmd,
+            creationflags=creationflags,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    else:
+        server_proc = subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+
+    # Poll until reachable
+    if not _wait_for_server(server_url, timeout=10):
+        raise RuntimeError("Detached server failed to start in time.")
+
+    print(f"Server started and reachable at {server_url}")
+    return server_proc
 
 
-def _stop_server(server):
-    """Gracefully stop the server."""
+def _stop_server(server_proc):
+    """Attempt to stop server cleanly."""
+    global _SERVER_HOST, _SERVER_PORT
+
+    server_url = f"http://{_SERVER_HOST}:{_SERVER_PORT}"
+
     try:
-        server.should_exit = True
+        requests.post(f"{server_url}/shutdown", timeout=1)
+        time.sleep(0.5)
+        sys.exit(0)
     except Exception:
-        pass  # Uvicorn server may already be down
+        pass
+
+    if server_proc is not None:
+        print("Terminating local server subprocess...")
+        try:
+            server_proc.terminate()
+        except Exception:
+            pass
 
 
 def shutdown_server():
-    """Manually shut down the server if needed."""
-    global _server_instance
-    if _server_instance:
-        print("Shutting down server...")
-        _stop_server(_server_instance)
-        _server_instance = None
+    """Force external manual shutdown if needed."""
+    global _SERVER_PROCESS
+    if _SERVER_PROCESS:
+        print("Manual server shutdown requested...")
+        _stop_server(_SERVER_PROCESS)
+        _SERVER_PROCESS = None
         print("Server shut down.")
+
+
+def _is_server_alive(url):
+    try:
+        r = requests.get(url, timeout=0.25)
+        return r.status_code < 500
+    except Exception:
+        return False
+
+
+def _wait_for_server(url, timeout=5, tick=0.25):
+    """Wait for the server to respond, ensuring it's reachable."""
+    start = time.time()
+    while time.time() - start < timeout:
+        if _is_server_alive(url):
+            return True
+        time.sleep(tick)
+    return False
 
 
 def _start_gui():
@@ -87,6 +148,7 @@ def _start_gui():
     print("Starting GUI...")
     match _get_current_dcc():
         case "hou":
+            # Houdini: widget must be returned immediately
             return MainWidget("hou")
         case "desktop":
             app = QApplication(sys.argv)
@@ -99,22 +161,9 @@ def _start_gui():
 
 
 def _get_current_dcc():
-    """Determine which environment the UAB is being run from."""
+    """Determine which environment UAB is being launched from."""
     try:
-        import hou
+        import hou  # Houdini
         return "hou"
     except ImportError:
         return "desktop"
-
-
-def _wait_for_server(url, timeout=5, tick=0.25):
-    """Wait for the server to respond, ensuring that it's running."""
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            r = requests.get(url)
-            if r.status_code < 500:
-                return True
-        except Exception:
-            time.sleep(tick)
-    return False
