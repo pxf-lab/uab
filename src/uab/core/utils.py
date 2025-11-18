@@ -5,6 +5,25 @@ from pathlib import Path
 from PIL import Image
 import OpenEXR
 import Imath
+import platform
+
+
+def is_macos() -> bool:
+    """Check if the current operating system is macOS.
+
+    Returns:
+        bool: True if running on macOS, False otherwise.
+    """
+    return platform.system() == "Darwin"
+
+
+def get_modifier_key() -> str:
+    """Get the appropriate modifier key for keyboard shortcuts based on the OS.
+
+    Returns:
+        str: "Cmd" for macOS, "Ctrl" for Linux and Windows.
+    """
+    return "Cmd" if is_macos() else "Ctrl"
 
 
 def hdri_to_pixmap_format(

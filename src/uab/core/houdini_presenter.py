@@ -7,6 +7,7 @@ from typing import List
 
 from PySide6.QtCore import Slot
 from uab.core.base_presenter import Presenter
+from uab.core.utils import get_modifier_key
 
 
 class HoudiniPresenter(Presenter):
@@ -34,9 +35,11 @@ class HoudiniPresenter(Presenter):
 
     @Slot(object)
     def set_current_context_menu_options(self, context: object) -> List[dict]:
+        modifier_key = get_modifier_key()
+
         options = [
             {"label": "Instantiate", "callback": self.on_instantiate_requested,
-                "shortcut": "Ctrl+LMB"},
+                "shortcut": f"{modifier_key}+LMB"},
             {"label": "Open Image", "callback": self.on_open_image_requested,
                 "shortcut": ""},
             {"label": "Reveal in File System",
