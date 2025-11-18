@@ -56,19 +56,23 @@ class AssetService:
             print(f"Error deleting asset with id {asset_id}: {e}")
 
     @staticmethod
-    def create_asset_req_body_from_path(
+    def create_asset_request_body(
         asset_path: str,
+        name: str | None = None,
+        description: str | None = None,
+        preview_image_file_path: str | None = None,
         tags: list[str] | None = None,
         author: str | None = None,
-    ):
-        """Create a request body matching the new schema."""
+        date_created: str | None = None,
+        date_added: str | None = None,
+    ) -> dict:
         return {
-            "name": pl.Path(asset_path).name,
+            "name": name or pl.Path(asset_path).name,
             "path": str(asset_path),
-            "description": None,
-            "preview_image_file_path": None,
+            "description": description,
+            "preview_image_file_path": preview_image_file_path,
             "tags": tags or [],
             "author": author,
-            "date_created": datetime.now().isoformat(),
-            "date_added": datetime.now().isoformat(),
+            "date_created": date_created or datetime.now().isoformat(),
+            "date_added": date_added or datetime.now().isoformat(),
         }
