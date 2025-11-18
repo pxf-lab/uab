@@ -272,7 +272,7 @@ class Detail(QWidget):
         directory_path = Path(asset.get('path', ''))
         if directory_path and directory_path.exists():
             try:
-                byte_image = utils.hdr_to_preview(
+                byte_image = utils.hdri_to_pixmap_format(
                     directory_path, as_bytes=True)
                 pixmap.loadFromData(byte_image)
             except Exception as e:

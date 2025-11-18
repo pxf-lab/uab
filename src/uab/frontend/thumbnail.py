@@ -175,10 +175,10 @@ class Thumbnail(QWidget):
         norm = os.path.normpath(str(dir_path)) if dir_path else ''
 
         # Check if directory_path is a .hdr file
-        if norm and norm.lower().endswith('.hdr') and os.path.isfile(norm):
+        if norm and (norm.lower().endswith('.hdr') or norm.lower().endswith('.exr')) and os.path.isfile(norm):
             try:
                 # Use hdr_to_preview to generate a tone-mapped preview
-                byte_image = utils.hdr_to_preview(norm, as_bytes=True)
+                byte_image = utils.hdri_to_pixmap_format(norm, as_bytes=True)
                 # Convert PIL Image to QPixmap
                 pixmap.loadFromData(byte_image)
             except Exception as e:
