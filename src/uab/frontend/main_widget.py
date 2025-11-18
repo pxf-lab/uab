@@ -23,6 +23,7 @@ class MainWidget(QWidget):
     filter_changed = Signal(str)
     renderer_changed = Signal(str)
     import_clicked = Signal(str)
+    back_clicked = Signal()
     delete_asset_clicked = Signal(int)
 
     def __init__(self, dcc: str, parent: QWidget | None = None) -> None:
@@ -66,7 +67,7 @@ class MainWidget(QWidget):
         self.status_bar.update()
 
         # Connections
-        self.detail.back_clicked.connect(self.show_browser)
+        self.detail.back_clicked.connect(self._on_back_clicked)
         self.detail.delete_clicked.connect(self._on_delete_asset_clicked)
         self.toolbar.import_asset_selected.connect(self._on_import_clicked)
         self.toolbar.renderer_changed.connect(self._on_renderer_changed)
@@ -78,6 +79,9 @@ class MainWidget(QWidget):
                 self.presenter = DesktopPresenter(self)
             case _:
                 raise ValueError(f"Invalid DCC: {dcc}")
+
+    def _on_back_clicked(self) -> None:
+        self.back_clicked.emit()
 
     def show_browser(self) -> None:
         self.stacked.setCurrentWidget(self.browser)

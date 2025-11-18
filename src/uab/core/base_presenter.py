@@ -36,6 +36,10 @@ class Presenter(QObject):
         self.widget.import_clicked.connect(self.on_import_asset)
         self.widget.renderer_changed.connect(self.on_renderer_changed)
         self.widget.delete_asset_clicked.connect(self.on_delete_asset)
+        self.widget.back_clicked.connect(self.on_back_clicked)
+
+    def on_back_clicked(self) -> None:
+        self.widget.show_browser()
 
     def set_current_context_menu_options(self, thumbnail_context_menu_event: dict) -> List[dict]:
         raise ImplementedByDerivedClassError(
