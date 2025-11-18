@@ -154,13 +154,13 @@ class Presenter(QObject):
         self.widget.show_message(
             f"Opening image for asset: {asset['name']}", "info", 3000)
         if platform.system() == 'Darwin':
-            subprocess.call(('open', asset['directory_path']))
+            subprocess.call(('open', asset['path']))
         elif platform.system() == 'Windows':
-            os.startfile(asset['directory_path'])
+            os.startfile(asset['path'])
 
     def on_reveal_in_file_system_requested(self, asset: dict) -> None:
         print(f"Revealing in file system for asset: {asset['name']}")
-        asset_path = pl.Path(asset['directory_path'])
+        asset_path = pl.Path(asset['path'])
         if platform.system() == "Windows":
             os.startfile(str(asset_path.parent))
         elif platform.system() == "Darwin":
