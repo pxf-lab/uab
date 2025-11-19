@@ -1,4 +1,5 @@
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -25,9 +26,11 @@ class MainWidget(QWidget):
     import_clicked = Signal(str)
     back_clicked = Signal()
     delete_asset_clicked = Signal(int)
+    widget_closed = Signal()
 
-    def __init__(self, dcc: str, parent: QWidget | None = None) -> None:
+    def __init__(self, dcc: str, client_id: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.client_id = client_id
         self.current_asset = None
         self.current_thumbnails = []
 
@@ -126,3 +129,7 @@ class MainWidget(QWidget):
                 p.set_selected(False)
         thumbnail.set_selected(True)
         return thumbnail
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.widget_closed.emit()
+        super().closeEvent(event)

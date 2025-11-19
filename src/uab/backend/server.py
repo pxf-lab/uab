@@ -25,6 +25,14 @@ app.include_router(router)
 clients = {}
 
 
+@app.get("/clients")
+def get_clients():
+    """
+    Get a list of all currently registered client IDs.
+    """
+    return {"clients": list(clients.keys())}
+
+
 @app.post("/register_client")
 async def register(payload: dict):
     """Register a client."""
@@ -36,6 +44,7 @@ async def register(payload: dict):
 @app.post("/unregister_client")
 async def unregister(payload: dict):
     """Unregister a client."""
+    print(f"Unregistering client {payload.get('client_id')}")
     cid = payload.get("client_id")
     clients.pop(cid, None)
     if not clients:

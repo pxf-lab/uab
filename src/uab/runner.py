@@ -21,23 +21,21 @@ def run():
 
     # Start server (detached process if not already running)
     server_proc = _start_server()
-    CLIENT_ID = f"{os.getpid()}_{_get_current_dcc()}"
+    registration_pid = os.getpid()
+    CLIENT_ID = f"{registration_pid}_{_get_current_dcc()}"
+    print(
+        f"Registering client with PID {registration_pid}, client_id: {CLIENT_ID}")
     requests.post(f"{_SERVER_URL}/register_client",
                   json={"client_id": CLIENT_ID})
 
     if is_houdini:
         global _SERVER_PROCESS
         _SERVER_PROCESS = server_proc
-        result = _start_gui()
+        result = _start_gui(CLIENT_ID)
         return result
     else:
-        try:
-            result = _start_gui()
-            return result
-        finally:
-            print("Desktop mode cleanup: requesting server shutdown...")
-            _stop_server(server_proc)
-            print("Server stopped.")
+        result = _start_gui(CLIENT_ID)
+        return result
 
 
 def _start_server():
@@ -73,18 +71,18 @@ def _start_server():
         server_proc = subprocess.Popen(
             cmd,
             creationflags=creationflags,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
             close_fds=True,
         )
     else:
         server_proc = subprocess.Popen(
             cmd,
             start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
             close_fds=True,
         )
 
@@ -94,37 +92,6 @@ def _start_server():
 
     print(f"Server started and reachable at {_SERVER_URL}")
     return server_proc
-
-
-def _stop_server(server_proc):
-    """Attempt to stop server cleanly."""
-    global _SERVER_HOST, _SERVER_PORT
-
-    server_url = f"{_SERVER_URL}"
-
-    try:
-        requests.post(f"{server_url}/shutdown", timeout=1)
-        time.sleep(0.5)
-        sys.exit(0)
-    except Exception:
-        pass
-
-    if server_proc is not None:
-        print("Terminating local server subprocess...")
-        try:
-            server_proc.terminate()
-        except Exception:
-            pass
-
-
-def shutdown_server():
-    """Force external manual shutdown if needed."""
-    global _SERVER_PROCESS
-    if _SERVER_PROCESS:
-        print("Manual server shutdown requested...")
-        _stop_server(_SERVER_PROCESS)
-        _SERVER_PROCESS = None
-        print("Server shut down.")
 
 
 def _is_server_alive(url):
@@ -145,17 +112,34 @@ def _wait_for_server(url, timeout=5, tick=0.25):
     return False
 
 
-def _start_gui():
+def unregister_client(client_id: str):
+    try:
+        current_pid = os.getpid()
+        print(f"Unregistering client {client_id} (current PID: {current_pid})")
+        response = requests.post(
+            f"{_SERVER_URL}/unregister_client", json={"client_id": client_id})
+        response.raise_for_status()
+        print(f"Successfully unregistered client {client_id}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error unregistering client {client_id}: {e}")
+
+
+def _start_gui(client_id: str):
     """Launch the GUI appropriately depending on environment."""
     print("Starting GUI...")
     match _get_current_dcc():
         case "hou":
-            # Houdini: widget must be returned immediately
-            return MainWidget("hou")
+            return MainWidget("hou", client_id)
         case "desktop":
             app = QApplication(sys.argv)
-            win = MainWindow(MainWidget("desktop"))
+
+            def unregister_current_process():
+                current_client_id = f"{os.getpid()}_{_get_current_dcc()}"
+                unregister_client(current_client_id)
+            win = MainWindow(MainWidget("desktop", client_id),
+                             unregister_callback=unregister_current_process)
             win.show()
+            app.aboutToQuit.connect(lambda: win._unregister_if_needed())
             exit_code = app.exec()
             return exit_code
         case _:

@@ -55,6 +55,14 @@ class AssetService:
         except requests.exceptions.RequestException as e:
             print(f"Error deleting asset with id {asset_id}: {e}")
 
+    def unregister_client(self, client_id: str):
+        try:
+            response = requests.post(
+                f"{self.url}/unregister_client", json={"client_id": client_id})
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Error unregistering client {client_id}: {e}")
+
     @staticmethod
     def create_asset_request_body(
         asset_path: str,
