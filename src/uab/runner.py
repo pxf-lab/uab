@@ -13,6 +13,7 @@ from uab.core.utils import is_macos
 _SERVER_PROCESS = None
 _SERVER_PORT = 8000
 _SERVER_HOST = "127.0.0.1"
+_SERVER_URL = f"http://{_SERVER_HOST}:{_SERVER_PORT}"
 
 
 def run():
@@ -20,6 +21,9 @@ def run():
 
     # Start server (detached process if not already running)
     server_proc = _start_server()
+    CLIENT_ID = f"{os.getpid()}_{_get_current_dcc()}"
+    requests.post(f"{_SERVER_URL}/register_client",
+                  json={"client_id": CLIENT_ID})
 
     if is_houdini:
         global _SERVER_PROCESS
@@ -40,9 +44,7 @@ def _start_server():
     """Ensure the FastAPI server is running (spawn detached process if needed)."""
     global _SERVER_PORT, _SERVER_HOST
 
-    server_url = f"http://{_SERVER_HOST}:{_SERVER_PORT}"
-
-    if _is_server_alive(server_url):
+    if _is_server_alive(_SERVER_URL):
         print("Server already running, reusing existing instance.")
         return None
 
@@ -87,10 +89,10 @@ def _start_server():
         )
 
     # Poll until reachable
-    if not _wait_for_server(server_url, timeout=10):
+    if not _wait_for_server(_SERVER_URL, timeout=10):
         raise RuntimeError("Detached server failed to start in time.")
 
-    print(f"Server started and reachable at {server_url}")
+    print(f"Server started and reachable at {_SERVER_URL}")
     return server_proc
 
 
@@ -98,7 +100,7 @@ def _stop_server(server_proc):
     """Attempt to stop server cleanly."""
     global _SERVER_HOST, _SERVER_PORT
 
-    server_url = f"http://{_SERVER_HOST}:{_SERVER_PORT}"
+    server_url = f"{_SERVER_URL}"
 
     try:
         requests.post(f"{server_url}/shutdown", timeout=1)
