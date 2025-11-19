@@ -178,3 +178,15 @@ def file_name_to_display_name(file_path: Path) -> str:
     name = file_path.stem
     name = name.replace("_", " ").replace("-", " ").replace(".", " ")
     return name.title()
+
+
+def tags_from_file_name(file_path: Path) -> list[str]:
+    """Extract tags from a file name.
+
+    Args:
+        file_path (Path): The file path to extract tags from.
+
+    Returns:
+        list[str]: The tags.
+    """
+    return [file_path.suffix]

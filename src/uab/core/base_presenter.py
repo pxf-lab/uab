@@ -76,7 +76,9 @@ class Presenter(QObject):
                 if os.path.isfile(file_path) and filename.lower().endswith('.hdr'):
                     asset = self.asset_service.create_asset_request_body(
                         file_path,
-                        name=utils.file_name_to_display_name(pl.Path(file_path)))
+                        name=utils.file_name_to_display_name(
+                            pl.Path(file_path)),
+                        tags=utils.tags_from_file_name(pl.Path(file_path)))
                     self.asset_service.add_asset_to_db(asset)
                     imported_count += 1
                 else:
@@ -88,7 +90,8 @@ class Presenter(QObject):
             print(f"Importing asset: {asset_path}")
             asset = self.asset_service.create_asset_request_body(
                 asset_path,
-                name=utils.file_name_to_display_name(pl.Path(asset_path)))
+                name=utils.file_name_to_display_name(pl.Path(asset_path)),
+                tags=utils.tags_from_file_name(pl.Path(asset_path)))
             self.asset_service.add_asset_to_db(asset)
             self._refresh_browser()
             self.widget.show_message(
@@ -205,7 +208,6 @@ class Presenter(QObject):
 
     def on_search_changed(self, text: str, delay: int = 200) -> None:
         if not hasattr(self, "_search_debounce_timer"):
-            from PySide6.QtCore import QTimer
             self._search_debounce_timer = QTimer(self)
             self._search_debounce_timer.setSingleShot(True)
             self._search_debounce_timer.timeout.connect(self._trigger_search)
