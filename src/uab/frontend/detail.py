@@ -416,6 +416,7 @@ class Detail(QWidget):
         tags = [tag.strip() for tag in tags_text.split(
             ',') if tag.strip()] if tags_text else []
 
+        # TODO: fix this date formatting. It should be easily human readable.
         if not utils.is_valid_date(self.date_created_edit.text()):
             self.date_created_edit.setText(
                 self.current_asset.get('date_created', ''))

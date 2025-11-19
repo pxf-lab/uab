@@ -32,7 +32,7 @@ class Presenter(QObject):
         self._refresh_browser()
 
         self._refresh_gui_timer = QTimer(self)
-        self._refresh_gui_timer.setInterval(5000)  # 5 seconds
+        self._refresh_gui_timer.setInterval(20000)  # 20 seconds
         self._refresh_gui_timer.timeout.connect(
             self._automatically_refresh_browser)
         self._refresh_gui_timer.start()
@@ -90,6 +90,7 @@ class Presenter(QObject):
                 f"Imported {imported_count} .hdr asset(s) from directory. Skipped {skipped_count} non-hdr file(s).", "info", 3000)
         else:
             print(f"Importing asset: {asset_path}")
+            # TODO: set the date added to the current date
             asset = self.asset_service.create_asset_request_body(
                 asset_path,
                 name=utils.file_name_to_display_name(pl.Path(asset_path)),
@@ -136,6 +137,8 @@ class Presenter(QObject):
             f"Saved metadata changes for asset: {asset['name']}", "info", 3000)
 
     def _automatically_refresh_browser(self):
+        # TODO: make this smarter: only refresh if there's anything new.
+        # Maybe only pull in new/changed assets, not all of them?
         if not self.widget.is_browser_visible():
             return
         self._refresh_browser()
