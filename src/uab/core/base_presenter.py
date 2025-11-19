@@ -1,3 +1,4 @@
+from datetime import datetime
 import pathlib as pl
 from PySide6.QtCore import QObject, QTimer
 import os
@@ -32,7 +33,7 @@ class Presenter(QObject):
         self._refresh_browser()
 
         self._refresh_gui_timer = QTimer(self)
-        self._refresh_gui_timer.setInterval(20000)  # 20 seconds
+        self._refresh_gui_timer.setInterval(30000)  # 30 seconds
         self._refresh_gui_timer.timeout.connect(
             self._automatically_refresh_browser)
         self._refresh_gui_timer.start()
@@ -94,7 +95,8 @@ class Presenter(QObject):
             asset = self.asset_service.create_asset_request_body(
                 asset_path,
                 name=utils.file_name_to_display_name(pl.Path(asset_path)),
-                tags=utils.tags_from_file_name(pl.Path(asset_path)))
+                tags=utils.tags_from_file_name(pl.Path(asset_path)),
+                date_added=datetime.now().isoformat())
             self.asset_service.add_asset_to_db(asset)
             self._refresh_browser()
             self.widget.show_message(
