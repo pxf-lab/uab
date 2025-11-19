@@ -32,7 +32,8 @@ class Presenter(QObject):
 
         self._refresh_gui_timer = QTimer(self)
         self._refresh_gui_timer.setInterval(5000)  # 5 seconds
-        self._refresh_gui_timer.timeout.connect(self._refresh_browser)
+        self._refresh_gui_timer.timeout.connect(
+            self._automatically_refresh_browser)
         self._refresh_gui_timer.start()
 
     def bind_events(self):
@@ -119,11 +120,12 @@ class Presenter(QObject):
     def on_save_metadata_changes(self, asset: dict):
         pass
 
-    def _refresh_browser(self):
+    def _automatically_refresh_browser(self):
         if not self.widget.is_browser_visible():
             return
-        self.widget.show_message(
-            f"Refreshing browser...", "info", 2000)
+        self._refresh_browser()
+
+    def _refresh_browser(self):
         self.assets = self._load_assets()
         self.thumbnails = self._create_thumbnails_list(self.assets)
         self.widget.draw_thumbnails(self.thumbnails)
