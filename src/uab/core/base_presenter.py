@@ -1,5 +1,5 @@
 import pathlib as pl
-from PySide6.QtCore import QObject, QPoint
+from PySide6.QtCore import QObject, QTimer
 import os
 import subprocess
 import platform
@@ -28,7 +28,12 @@ class Presenter(QObject):
             ["Karma", "Mantra", "Renderman", "Redshift", "Arnold", "V-Ray"])
 
         self.bind_events()
-        self._refresh_gui()
+        self._refresh_browser()
+
+        self._refresh_gui_timer = QTimer(self)
+        self._refresh_gui_timer.setInterval(5000)  # 5 seconds
+        self._refresh_gui_timer.timeout.connect(self._refresh_browser)
+        self._refresh_gui_timer.start()
 
     def bind_events(self):
         self.widget.search_text_changed.connect(self.on_search_changed)
@@ -73,7 +78,7 @@ class Presenter(QObject):
                     imported_count += 1
                 else:
                     skipped_count += 1
-            self._refresh_gui()
+            self._refresh_browser()
             self.widget.show_message(
                 f"Imported {imported_count} .hdr asset(s) from directory. Skipped {skipped_count} non-hdr file(s).", "info", 3000)
         else:
@@ -81,13 +86,13 @@ class Presenter(QObject):
             asset = self.asset_service.create_asset_request_body(
                 asset_path)
             self.asset_service.add_asset_to_db(asset)
-            self._refresh_gui()
+            self._refresh_browser()
             self.widget.show_message(
                 f"Imported asset! {asset['name']}", "info", 3000)
 
     def on_delete_asset(self, asset_id):
         self.asset_service.remove_asset_from_db(asset_id)
-        self._refresh_gui()
+        self._refresh_browser()
         self.widget.show_browser()
         self.widget.show_message(f"Deleted asset!", "info", 3000)
 
@@ -114,10 +119,16 @@ class Presenter(QObject):
     def on_save_metadata_changes(self, asset: dict):
         pass
 
-    def _refresh_gui(self):
+    def _refresh_browser(self):
+        if not self.widget.is_browser_visible():
+            return
+        self.widget.show_message(
+            f"Refreshing browser...", "info", 2000)
         self.assets = self._load_assets()
         self.thumbnails = self._create_thumbnails_list(self.assets)
         self.widget.draw_thumbnails(self.thumbnails)
+        self.widget.show_message(
+            f"Browser refreshed!", "info", 2000)
 
     def _load_assets(self):
         return self.asset_service.get_assets()
