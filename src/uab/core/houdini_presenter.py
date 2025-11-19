@@ -45,6 +45,9 @@ class HoudiniPresenter(Presenter):
             {"label": "Reveal in File System",
                 "callback": self.on_reveal_in_file_system_requested,
                 "shortcut": ""},
+            {"label": "Remove Asset",
+                "callback": self.on_delete_asset,
+                "shortcut": ""},
         ]
         if self._is_dome_light_currently_selected():
             set_texture_option = {
