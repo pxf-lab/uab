@@ -94,11 +94,12 @@ class Presenter(QObject):
             self.widget.show_message(
                 f"Imported asset! {asset['name']}", "info", 3000)
 
-    def on_delete_asset(self, asset_id):
-        self.asset_service.remove_asset_from_db(asset_id)
+    def on_delete_asset(self, asset: dict):
+        self.asset_service.remove_asset_from_db(asset['id'])
         self._refresh_browser()
         self.widget.show_browser()
-        self.widget.show_message(f"Deleted asset!", "info", 3000)
+        self.widget.show_message(
+            f"Deleted asset: {asset['name']}", "info", 3000)
 
     def on_renderer_changed(self, renderer_text: str):
         self.widget.show_message(

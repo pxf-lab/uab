@@ -21,6 +21,9 @@ class DesktopPresenter(Presenter):
             {"label": "Reveal in File System",
                 "callback": self.on_reveal_in_file_system_requested,
                 "shortcut": ""},
+            {"label": "Remove Asset",
+                "callback": self.on_delete_asset,
+                "shortcut": ""},
         ]
         thumbnail_context_menu_event["object"].create_context_menu_options(
             options, thumbnail_context_menu_event["position"])
