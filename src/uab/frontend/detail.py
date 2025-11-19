@@ -25,7 +25,7 @@ class Detail(QWidget):
     """
 
     back_clicked = Signal()
-    save_clicked = Signal(dict)  # Emits the updated asset data
+    save_clicked = Signal(dict)
     delete_clicked = Signal(int)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -269,11 +269,11 @@ class Detail(QWidget):
 
         # TODO: @thumbnail.py has a method that does exactly the same thing.
         pixmap = QPixmap()
-        directory_path = Path(asset.get('path', ''))
-        if directory_path and directory_path.exists():
+        path = Path(asset.get('path', ''))
+        if path and path.exists():
             try:
                 byte_image = utils.hdri_to_pixmap_format(
-                    directory_path, as_bytes=True)
+                    path, as_bytes=True)
                 pixmap.loadFromData(byte_image)
             except Exception as e:
                 print(f"Error loading preview: {e}")
@@ -305,9 +305,8 @@ class Detail(QWidget):
         self.name_edit.setText(name)
 
         # Display file path
-        path = asset.get('directory_path', 'No path specified')
-        self.path_display.setText(path)
-        self.path_edit.setText(path)
+        self.path_display.setText(str(path))
+        self.path_edit.setText(str(path))
 
         # Display description
         description = asset.get('description') or 'No description provided'
@@ -348,7 +347,7 @@ class Detail(QWidget):
         # Collect the edited values
         updated_asset = dict(self.current_asset)
         updated_asset['name'] = self.name_edit.text()
-        updated_asset['directory_path'] = self.path_edit.text()
+        updated_asset['path'] = self.path_edit.text()
         updated_asset['description'] = self.desc_edit.toPlainText()
 
         # Parse tags
