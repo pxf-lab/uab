@@ -5,6 +5,7 @@ import subprocess
 import platform
 from typing import List
 
+from uab.core import utils
 from uab.frontend.thumbnail import Thumbnail
 from uab.backend.asset_service import AssetService
 
@@ -74,7 +75,8 @@ class Presenter(QObject):
                 # TODO: add support for other file types
                 if os.path.isfile(file_path) and filename.lower().endswith('.hdr'):
                     asset = self.asset_service.create_asset_request_body(
-                        file_path)
+                        file_path,
+                        name=utils.file_name_to_display_name(pl.Path(file_path)))
                     self.asset_service.add_asset_to_db(asset)
                     imported_count += 1
                 else:
@@ -85,7 +87,8 @@ class Presenter(QObject):
         else:
             print(f"Importing asset: {asset_path}")
             asset = self.asset_service.create_asset_request_body(
-                asset_path)
+                asset_path,
+                name=utils.file_name_to_display_name(pl.Path(asset_path)))
             self.asset_service.add_asset_to_db(asset)
             self._refresh_browser()
             self.widget.show_message(

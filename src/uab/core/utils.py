@@ -164,3 +164,17 @@ def _load_exr(input_path: Path) -> np.ndarray:
     bgr = np.stack([b, g, r], axis=2)
 
     return bgr
+
+
+def file_name_to_display_name(file_path: Path) -> str:
+    """Convert a file name to a display name.
+
+    Args:
+        file_name (str): The file name to convert.
+
+    Returns:
+        str: The display name.
+    """
+    name = file_path.stem
+    name = name.replace("_", " ").replace("-", " ").replace(".", " ")
+    return name.title()
