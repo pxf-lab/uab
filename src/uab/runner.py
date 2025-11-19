@@ -139,6 +139,7 @@ def _start_gui(client_id: str):
             win = MainWindow(MainWidget("desktop", client_id),
                              unregister_callback=unregister_current_process)
             win.show()
+            # This handles Cmd+Q and other times that QApplication.quit() is called.
             app.aboutToQuit.connect(lambda: win._unregister_if_needed())
             exit_code = app.exec()
             return exit_code

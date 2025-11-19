@@ -21,7 +21,9 @@ class MainWindow(QMainWindow):
         self._unregistered = False
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Handle window close event by unregistering the client."""
+        """Handle window close event by unregistering the client.
+        This handles when the window is closed by clicking the close button,
+        which is different from when the application is quit. """
         self._unregister_if_needed()
         super().closeEvent(event)
 
