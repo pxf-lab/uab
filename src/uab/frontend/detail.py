@@ -381,6 +381,16 @@ class Detail(QWidget):
         self.tags_edit.setText(
             ', '.join(tags) if isinstance(tags, list) else str(tags))
 
+        # Display author
+        author = asset.get('author', 'Unknown')
+        self.author_display.setText(author)
+        self.author_edit.setText(author)
+
+        # Display date created
+        date_created = asset.get('date_created', 'Unknown')
+        self.date_created_display.setText(date_created)
+        self.date_created_edit.setText(date_created)
+
     def edit_metadata(self, asset: dict) -> None:
         """
         Enter edit mode for the asset metadata.
