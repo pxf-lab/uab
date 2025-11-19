@@ -1,3 +1,4 @@
+import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core import utils
+from uab.backend.asset_service import AssetService
 
 
 class Detail(QWidget):
@@ -280,6 +282,7 @@ class Detail(QWidget):
         self.date_created_display.setStyleSheet(
             "color: #ccc; padding: 5px; font-size: 11pt;")
         self.date_created_edit = QLineEdit()
+        self.date_created_edit.setPlaceholderText("YYYY-MM-DD")
         self.date_created_edit.setVisible(False)
         self.date_created_edit.setStyleSheet("padding: 5px; font-size: 11pt;")
         date_created_layout.addWidget(date_created_label)
@@ -399,19 +402,26 @@ class Detail(QWidget):
         if not self.current_asset:
             return {}
 
-        # Collect the edited values
-        updated_asset = dict(self.current_asset)
-        updated_asset['name'] = self.name_edit.text()
-        updated_asset['path'] = self.path_edit.text()
-        updated_asset['description'] = self.desc_edit.toPlainText()
-
-        # Parse tags
         tags_text = self.tags_edit.text()
-        if tags_text:
-            tags = [tag.strip() for tag in tags_text.split(',') if tag.strip()]
-            updated_asset['tags'] = tags
-        else:
-            updated_asset['tags'] = []
+        tags = [tag.strip() for tag in tags_text.split(
+            ',') if tag.strip()] if tags_text else []
+
+        if not utils.is_valid_date(self.date_created_edit.text()):
+            self.date_created_edit.setText(
+                self.current_asset.get('date_created', ''))
+
+        updated_asset = AssetService.create_asset_request_body(
+            asset_path=self.path_edit.text(),
+            name=self.name_edit.text(),
+            description=self.desc_edit.toPlainText(),
+            tags=tags,
+            author=self.author_edit.text(),
+            date_created=self.date_created_edit.text(),
+        )
+
+        # Preserve the asset's ID
+        if 'id' in self.current_asset:
+            updated_asset['id'] = self.current_asset['id']
 
         return updated_asset
 
