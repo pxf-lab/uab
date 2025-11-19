@@ -27,6 +27,7 @@ class MainWidget(QWidget):
     back_clicked = Signal()
     delete_asset_clicked = Signal(int)
     widget_closed = Signal()
+    save_metadata_changes_clicked = Signal(dict)
 
     def __init__(self, dcc: str, client_id: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -72,6 +73,7 @@ class MainWidget(QWidget):
         # Connections
         self.detail.back_clicked.connect(self._on_back_clicked)
         self.detail.delete_clicked.connect(self._on_delete_asset_clicked)
+        self.detail.save_clicked.connect(self._on_save_metadata_changes)
         self.toolbar.import_asset_selected.connect(self._on_import_clicked)
         self.toolbar.renderer_changed.connect(self._on_renderer_changed)
 
@@ -82,6 +84,9 @@ class MainWidget(QWidget):
                 self.presenter = DesktopPresenter(self)
             case _:
                 raise ValueError(f"Invalid DCC: {dcc}")
+
+    def _on_save_metadata_changes(self, asset: dict) -> None:
+        self.save_metadata_changes_clicked.emit(asset)
 
     def _on_back_clicked(self) -> None:
         self.back_clicked.emit()

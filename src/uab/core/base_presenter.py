@@ -45,6 +45,8 @@ class Presenter(QObject):
         self.widget.delete_asset_clicked.connect(self.on_delete_asset)
         self.widget.back_clicked.connect(self.on_back_clicked)
         self.widget.widget_closed.connect(self.on_widget_closed)
+        self.widget.save_metadata_changes_clicked.connect(
+            self.on_save_metadata_changes)
 
     def on_back_clicked(self) -> None:
         self.widget.show_browser()
@@ -126,6 +128,12 @@ class Presenter(QObject):
 
     def on_save_metadata_changes(self, asset: dict):
         pass
+
+    def on_save_metadata_changes(self, asset: dict):
+        self.asset_service.update_asset(asset)
+        self._refresh_browser()
+        self.widget.show_message(
+            f"Saved metadata changes for asset: {asset['name']}", "info", 3000)
 
     def _automatically_refresh_browser(self):
         if not self.widget.is_browser_visible():

@@ -55,6 +55,15 @@ class AssetService:
         except requests.exceptions.RequestException as e:
             print(f"Error deleting asset with id {asset_id}: {e}")
 
+    def update_asset(self, asset: dict):
+        try:
+            response = requests.put(
+                f"{self.url}/assets/{asset['id']}", json=asset)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"Error updating asset with id {asset['id']}: {e}")
+
+    # TODO: move this elsewhere
     def unregister_client(self, client_id: str):
         try:
             response = requests.post(
