@@ -1,3 +1,4 @@
+import datetime
 import cv2
 import numpy as np
 from io import BytesIO
@@ -190,3 +191,19 @@ def tags_from_file_name(file_path: Path) -> list[str]:
         list[str]: The tags.
     """
     return [file_path.suffix]
+
+
+def is_valid_date(date: str) -> str:
+    """Check if a date is valid.
+
+    Args:
+        date (str): The date to check.
+
+    Returns:
+        bool: True if the date is valid, False otherwise.
+    """
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
