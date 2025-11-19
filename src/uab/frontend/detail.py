@@ -237,6 +237,61 @@ class Detail(QWidget):
         scroll_area.setWidget(content_widget)
         right_main_layout.addWidget(scroll_area, 1)
 
+        sep4 = QFrame()
+        sep4.setFrameShape(QFrame.Shape.HLine)
+        sep4.setStyleSheet("color: #333;")
+        content_layout.addWidget(sep4)
+
+        # Author field
+        author_layout = QVBoxLayout()
+        author_layout.setSpacing(5)
+        author_label = QLabel("Author")
+        author_label.setStyleSheet(
+            "font-weight: bold; font-size: 11pt; color: #999;")
+        self.author_display = QLabel()
+        self.author_display.setWordWrap(True)
+        self.author_display.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.author_display.setStyleSheet(
+            "color: #ccc; padding: 5px; font-size: 11pt;")
+        self.author_edit = QLineEdit()
+        self.author_edit.setVisible(False)
+        self.author_edit.setStyleSheet("padding: 5px; font-size: 11pt;")
+        author_layout.addWidget(author_label)
+        author_layout.addWidget(self.author_display)
+        author_layout.addWidget(self.author_edit)
+        content_layout.addLayout(author_layout)
+
+        sep5 = QFrame()
+        sep5.setFrameShape(QFrame.Shape.HLine)
+        sep5.setStyleSheet("color: #333;")
+        content_layout.addWidget(sep5)
+
+        # Date created field
+        date_created_layout = QVBoxLayout()
+        date_created_layout.setSpacing(5)
+        date_created_label = QLabel("Date Created")
+        date_created_label.setStyleSheet(
+            "font-weight: bold; font-size: 11pt; color: #999;")
+        self.date_created_display = QLabel()
+        self.date_created_display.setWordWrap(True)
+        self.date_created_display.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.date_created_display.setStyleSheet(
+            "color: #ccc; padding: 5px; font-size: 11pt;")
+        self.date_created_edit = QLineEdit()
+        self.date_created_edit.setVisible(False)
+        self.date_created_edit.setStyleSheet("padding: 5px; font-size: 11pt;")
+        date_created_layout.addWidget(date_created_label)
+        date_created_layout.addWidget(self.date_created_display)
+        date_created_layout.addWidget(self.date_created_edit)
+        content_layout.addLayout(date_created_layout)
+
+        sep6 = QFrame()
+        sep6.setFrameShape(QFrame.Shape.HLine)
+        sep6.setStyleSheet("color: #333;")
+        content_layout.addWidget(sep6)
+
         # Back button at bottom right
         back_button_layout = QHBoxLayout()
         back_button_layout.addStretch()
@@ -382,7 +437,14 @@ class Detail(QWidget):
         self.tags_display.setVisible(not edit_mode)
         self.tags_edit.setVisible(edit_mode)
 
+        self.author_display.setVisible(not edit_mode)
+        self.author_edit.setVisible(edit_mode)
+
+        self.date_created_display.setVisible(not edit_mode)
+        self.date_created_edit.setVisible(edit_mode)
+
         # Toggle button visibility
+        self.btn_delete.setVisible(not edit_mode)
         self.btn_edit.setVisible(not edit_mode)
         self.btn_save.setVisible(edit_mode)
         self.btn_cancel.setVisible(edit_mode)
