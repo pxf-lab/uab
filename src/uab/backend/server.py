@@ -60,5 +60,5 @@ def _shutdown_after_time(timer: float = 1.0):
 
 @app.post("/shutdown")
 def shutdown():
-    os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=_shutdown_after_time).start()
     return {"status": "shutting down"}
