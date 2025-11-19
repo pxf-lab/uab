@@ -93,6 +93,12 @@ class MainWidget(QWidget):
         self.stacked.setCurrentWidget(self.detail)
         self.detail.draw_details(asset)
 
+    def is_browser_visible(self) -> bool:
+        return self.stacked.currentWidget() == self.browser
+
+    def is_detail_visible(self) -> bool:
+        return self.stacked.currentWidget() == self.detail
+
     def show_message(
         self, msg: str, message_type: str = "info", timeout: int = 5000
     ) -> None:
