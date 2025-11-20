@@ -93,7 +93,7 @@ class Thumbnail(QWidget):
         self.asset = asset
         self.asset_id = asset.get('id')
         self.asset_name = asset.get('name', '')
-        self.thumbnail: QPixmap = self._load_thumbnail()
+        self.thumbnail: QPixmap = self._load_thumbnail_preview_from_file()
         self.is_selected = False
         self._hover = False
         self._large_preview = LargePreviewPopup(self)
@@ -166,7 +166,7 @@ class Thumbnail(QWidget):
 
         self._update_pixmap_display()
 
-    def _load_thumbnail(self) -> QPixmap:
+    def _load_thumbnail_preview_from_file(self) -> QPixmap:
         """Load thumbnail from asset's directory_path or preview_image_file_path."""
         pixmap = QPixmap()
         dir_path = self.asset.get('path') or ''
@@ -174,7 +174,6 @@ class Thumbnail(QWidget):
         # Normalize the directory path
         norm = os.path.normpath(str(dir_path)) if dir_path else ''
 
-        # Check if directory_path is a .hdr file
         if norm and (norm.lower().endswith('.hdr') or norm.lower().endswith('.exr')) and os.path.isfile(norm):
             try:
                 # Use hdr_to_preview to generate a tone-mapped preview

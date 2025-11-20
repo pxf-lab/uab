@@ -3,7 +3,6 @@ import os
 import sys
 import requests
 import time
-import threading
 from PySide6.QtWidgets import QApplication
 
 from uab.frontend.main_widget import MainWidget
