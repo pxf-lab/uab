@@ -76,7 +76,7 @@ class Presenter(QObject):
             for filename in os.listdir(asset_path):
                 file_path = os.path.join(asset_path, filename)
                 # TODO: add support for other file types
-                if os.path.isfile(file_path) and filename.lower().endswith('.hdr'):
+                if os.path.isfile(file_path) and (filename.lower().endswith('.hdr') or filename.lower().endswith('.exr')):
                     asset = self.asset_service.create_asset_request_body(
                         file_path,
                         name=utils.file_name_to_display_name(
@@ -91,7 +91,6 @@ class Presenter(QObject):
                 f"Imported {imported_count} .hdr asset(s) from directory. Skipped {skipped_count} non-hdr file(s).", "info", 3000)
         else:
             print(f"Importing asset: {asset_path}")
-            # TODO: set the date added to the current date
             asset = self.asset_service.create_asset_request_body(
                 asset_path,
                 name=utils.file_name_to_display_name(pl.Path(asset_path)),
