@@ -95,8 +95,7 @@ class Presenter(QObject):
             asset = self.asset_service.create_asset_request_body(
                 asset_path,
                 name=utils.file_name_to_display_name(pl.Path(asset_path)),
-                tags=utils.tags_from_file_name(pl.Path(asset_path)),
-                date_added=datetime.now().isoformat())
+                tags=utils.tags_from_file_name(pl.Path(asset_path)))
             self.asset_service.add_asset_to_db(asset)
             self._refresh_browser()
             self.widget.show_message(

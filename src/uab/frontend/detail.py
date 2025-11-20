@@ -272,7 +272,7 @@ class Detail(QWidget):
         # Date created field
         date_created_layout = QVBoxLayout()
         date_created_layout.setSpacing(5)
-        date_created_label = QLabel("Date Created")
+        date_created_label = QLabel("Date Created (YYYY-MM-DD)")
         date_created_label.setStyleSheet(
             "font-weight: bold; font-size: 11pt; color: #999;")
         self.date_created_display = QLabel()
@@ -382,14 +382,14 @@ class Detail(QWidget):
             ', '.join(tags) if isinstance(tags, list) else str(tags))
 
         # Display author
-        author = asset.get('author', 'Unknown')
-        self.author_display.setText(author)
-        self.author_edit.setText(author)
+        author = asset.get('author')
+        self.author_display.setText(author or 'Unknown')
+        self.author_edit.setText(author or '')
 
         # Display date created
         date_created = asset.get('date_created', 'Unknown')
-        self.date_created_display.setText(date_created)
-        self.date_created_edit.setText(date_created)
+        self.date_created_display.setText(date_created.split('T')[0])
+        self.date_created_edit.setText(date_created.split('T')[0])
 
     def edit_metadata(self, asset: dict) -> None:
         """

@@ -81,7 +81,6 @@ class AssetService:
         tags: list[str] | None = None,
         author: str | None = None,
         date_created: str | None = None,
-        date_added: str | None = None,
     ) -> dict:
         return {
             "name": name or pl.Path(asset_path).name,
@@ -90,6 +89,6 @@ class AssetService:
             "preview_image_file_path": preview_image_file_path,
             "tags": tags or [],
             "author": author,
-            "date_created": date_created or datetime.now().isoformat(),
-            "date_added": date_added or datetime.now().isoformat(),
+            "date_created": date_created or datetime.now().isoformat().split('T')[0],
+            "date_added": datetime.now().isoformat().split('T')[0],
         }
