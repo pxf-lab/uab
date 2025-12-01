@@ -1,4 +1,12 @@
 from abc import ABC
+from io import BytesIO
+from pathlib import Path
+
+import cv2
+import Imath
+import numpy as np
+import OpenEXR
+from PIL import Image
 
 
 class Asset(ABC):
@@ -122,3 +130,171 @@ class Texture(Asset):
 class HDRI(Texture):
     def __init__(self, name: str, path: str, color_space: str):
         super().__init__(name, path, color_space)
+
+    @staticmethod
+    def _load_hdr(input_path: Path) -> np.ndarray:
+        """Load an HDR file and return as BGR float32 numpy array."""
+        hdr = cv2.imread(str(input_path), cv2.IMREAD_UNCHANGED)
+        if hdr is None:
+            raise FileNotFoundError(f"Cannot read HDR image: {input_path}")
+
+        hdr = hdr.astype(np.float32)
+
+        # Handle cases where channels are missing or alpha present
+        if hdr.ndim == 2:
+            hdr = cv2.merge([hdr, hdr, hdr])
+        elif hdr.shape[2] == 4:
+            hdr = hdr[:, :, :3]
+
+        return hdr
+
+    @staticmethod
+    def _load_exr(input_path: Path) -> np.ndarray:
+        """Load an EXR file and return as BGR float32 numpy array."""
+        try:
+            exr_file = OpenEXR.InputFile(str(input_path))
+        except Exception as e:  # pragma: no cover - defensive
+            raise FileNotFoundError(
+                f"Cannot read EXR image: {input_path}") from e
+
+        header = exr_file.header()
+        dw = header["dataWindow"]
+        width = dw.max.x - dw.min.x + 1
+        height = dw.max.y - dw.min.y + 1
+
+        FLOAT = Imath.PixelType(Imath.PixelType.FLOAT)
+        channels = ["R", "G", "B"]
+
+        available_channels = header["channels"].keys()
+        if not all(ch in available_channels for ch in channels):
+            if "Y" in available_channels:
+                channels = ["Y", "Y", "Y"]
+            else:
+                raise ValueError(
+                    f"EXR file missing RGB or Y channels: {input_path}"
+                )
+
+        # Read channel data
+        channel_data = [exr_file.channel(ch, FLOAT) for ch in channels]
+        r = np.frombuffer(
+            channel_data[0], dtype=np.float32).reshape(height, width)
+        g = np.frombuffer(
+            channel_data[1], dtype=np.float32).reshape(height, width)
+        b = np.frombuffer(
+            channel_data[2], dtype=np.float32).reshape(height, width)
+
+        # Stack as BGR (OpenCV convention)
+        bgr = np.stack([b, g, r], axis=2)
+        return bgr
+
+    @staticmethod
+    def _tone_map(
+        hdr: np.ndarray,
+        gamma: float = 2.4,
+        intensity: float = 0.5,
+        light_adapt: float = 0.0,
+        color_adapt: float = 0.0,
+    ) -> np.ndarray:
+        """Apply Reinhard tone mapping and return 8‑bit RGB image."""
+        tonemap = cv2.createTonemapReinhard(
+            gamma=gamma,
+            intensity=intensity,
+            light_adapt=light_adapt,
+            color_adapt=color_adapt,
+        )
+        ldr = tonemap.process(hdr)
+
+        # Convert to 8-bit RGB
+        ldr_8bit = np.clip(ldr * 255, 0, 255).astype(np.uint8)
+        ldr_rgb = cv2.cvtColor(ldr_8bit, cv2.COLOR_BGR2RGB)
+        return ldr_rgb
+
+    @classmethod
+    def _render_from_file(
+        cls,
+        input_path: str | Path,
+        gamma: float = 2.4,
+        intensity: float = 0.5,
+        light_adapt: float = 0.0,
+        color_adapt: float = 0.0,
+        as_image: bool = True,
+        as_bytes: bool = False,
+    ):
+        """Shared implementation for HDR/EXR preview rendering."""
+        input_path = Path(input_path)
+        ext = input_path.suffix.lower()
+
+        if ext == ".exr":
+            hdr = cls._load_exr(input_path)
+        elif ext == ".hdr":
+            hdr = cls._load_hdr(input_path)
+        else:
+            raise ValueError(f"Unsupported file extension: {ext}")
+
+        ldr_rgb = cls._tone_map(
+            hdr,
+            gamma=gamma,
+            intensity=intensity,
+            light_adapt=light_adapt,
+            color_adapt=color_adapt,
+        )
+
+        if as_bytes:
+            img = Image.fromarray(ldr_rgb)
+            buffer = BytesIO()
+            img.save(buffer, format="JPEG", quality=85)
+            return buffer.getvalue()
+
+        if as_image:
+            return Image.fromarray(ldr_rgb)
+
+        return ldr_rgb
+
+    @staticmethod
+    def render_from_hdr(
+        input_path: str | Path,
+        gamma: float = 2.4,
+        intensity: float = 0.5,
+        light_adapt: float = 0.0,
+        color_adapt: float = 0.0,
+        as_image: bool = True,
+        as_bytes: bool = False,
+    ):
+        """Renders a preview from an .hdr file using shared tone-mapping logic.
+
+        This method uses HDRI's own loading and tone‑mapping implementation.
+        """
+        return HDRI._render_from_file(
+            input_path=input_path,
+            gamma=gamma,
+            intensity=intensity,
+            light_adapt=light_adapt,
+            color_adapt=color_adapt,
+            as_image=as_image,
+            as_bytes=as_bytes,
+        )
+
+    @staticmethod
+    def render_from_exr(
+        input_path: str | Path,
+        gamma: float = 2.4,
+        intensity: float = 0.5,
+        light_adapt: float = 0.0,
+        color_adapt: float = 0.0,
+        as_image: bool = True,
+        as_bytes: bool = False,
+    ):
+        """Renders a preview from an .exr file using shared tone-mapping logic.
+
+        This shares the same implementation as `render_from_hdr`; the file
+        extension on `input_path` determines the loader used internally.
+        """
+        return HDRI._render_from_file(
+            input_path=input_path,
+            gamma=gamma,
+            intensity=intensity,
+            light_adapt=light_adapt,
+            color_adapt=color_adapt,
+            as_image=as_image,
+            as_bytes=as_bytes,
+        )
