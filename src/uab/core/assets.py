@@ -79,6 +79,39 @@ class Asset(ABC):
             "date_added": self.date_added,
         }
 
+    @classmethod
+    def from_api_payload(cls, data: dict) -> "Asset":
+        """
+        Creates an Asset instance from an API or JSON payload.
+
+        Args:
+            data (dict): The dictionary representing the API or JSON payload.
+
+        Returns:
+            Asset: An instance of the Asset class.
+
+        Notes:
+            This method is currently a thin wrapper around from_dict, keeping the
+            HTTP-boundary concept explicit for potential wire format divergence later.
+        """
+        return cls.from_dict(data)
+
+    def to_api_payload(self, include_id: bool = False) -> dict:
+        """
+        Converts this Asset into a JSON‑serializable payload for API calls.
+
+        Args:
+            include_id (bool): Whether to include the `id` field in the payload.
+                              Typically False for create, True for update.
+
+        Returns:
+            dict: A dictionary suitable for use as a FastAPI request body.
+        """
+        payload = self.to_dict()
+        if not include_id:
+            payload.pop("id", None)
+        return payload
+
 
 class Texture(Asset):
     def __init__(self, name: str, path: str, color_space: str):
