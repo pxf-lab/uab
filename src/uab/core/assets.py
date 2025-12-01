@@ -133,7 +133,17 @@ class HDRI(Texture):
 
     @staticmethod
     def _load_hdr(input_path: Path) -> np.ndarray:
-        """Load an HDR file and return as BGR float32 numpy array."""
+        """Load an HDR file and return as a BGR float32 numpy array.
+
+        Args:
+            input_path (Path): Path to the HDR image file.
+
+        Returns:
+            np.ndarray: Loaded image as a BGR float32 numpy array.
+
+        Raises:
+            FileNotFoundError: If the HDR image cannot be read.
+        """
         hdr = cv2.imread(str(input_path), cv2.IMREAD_UNCHANGED)
         if hdr is None:
             raise FileNotFoundError(f"Cannot read HDR image: {input_path}")
@@ -150,7 +160,18 @@ class HDRI(Texture):
 
     @staticmethod
     def _load_exr(input_path: Path) -> np.ndarray:
-        """Load an EXR file and return as BGR float32 numpy array."""
+        """Load an EXR file and return as a BGR float32 numpy array.
+
+        Args:
+            input_path (Path): Path to the EXR image file.
+
+        Returns:
+            np.ndarray: Loaded image as a BGR float32 numpy array.
+
+        Raises:
+            FileNotFoundError: If the EXR image cannot be opened.
+            ValueError: If needed channels are missing in the EXR.
+        """
         try:
             exr_file = OpenEXR.InputFile(str(input_path))
         except Exception as e:  # pragma: no cover - defensive
@@ -195,7 +216,18 @@ class HDRI(Texture):
         light_adapt: float = 0.0,
         color_adapt: float = 0.0,
     ) -> np.ndarray:
-        """Apply Reinhard tone mapping and return 8‑bit RGB image."""
+        """Apply Reinhard tone mapping and return an 8-bit RGB image.
+
+        Args:
+            hdr (np.ndarray): The input HDR image, BGR float32 numpy array.
+            gamma (float, optional): Gamma correction value. Defaults to 2.4.
+            intensity (float, optional): Intensity for tone mapping. Defaults to 0.5.
+            light_adapt (float, optional): Light adaptation. Defaults to 0.0.
+            color_adapt (float, optional): Color adaptation. Defaults to 0.0.
+
+        Returns:
+            np.ndarray: Tone-mapped 8-bit RGB numpy array.
+        """
         tonemap = cv2.createTonemapReinhard(
             gamma=gamma,
             intensity=intensity,
@@ -220,7 +252,23 @@ class HDRI(Texture):
         as_image: bool = True,
         as_bytes: bool = False,
     ):
-        """Shared implementation for HDR/EXR preview rendering."""
+        """Render an HDR or EXR image file to a tone-mapped RGB preview.
+
+        Args:
+            input_path (str | Path): The path to the input .hdr or .exr file.
+            gamma (float, optional): Gamma correction value. Defaults to 2.4.
+            intensity (float, optional): Intensity for tone mapping. Defaults to 0.5.
+            light_adapt (float, optional): Light adaptation. Defaults to 0.0.
+            color_adapt (float, optional): Color adaptation. Defaults to 0.0.
+            as_image (bool, optional): If True, return as PIL Image. Defaults to True.
+            as_bytes (bool, optional): If True, return as JPEG bytes. Defaults to False.
+
+        Returns:
+            Image.Image | np.ndarray | bytes: Preview as PIL Image (default), numpy array, or bytes.
+
+        Raises:
+            ValueError: If the file extension is not supported.
+        """
         input_path = Path(input_path)
         ext = input_path.suffix.lower()
 
@@ -260,9 +308,19 @@ class HDRI(Texture):
         as_image: bool = True,
         as_bytes: bool = False,
     ):
-        """Renders a preview from an .hdr file using shared tone-mapping logic.
+        """Render a preview from an .hdr file using tone mapping.
 
-        This method uses HDRI's own loading and tone‑mapping implementation.
+        Args:
+            input_path (str | Path): Path to the .hdr file.
+            gamma (float, optional): Gamma correction value. Defaults to 2.4.
+            intensity (float, optional): Intensity for tone mapping. Defaults to 0.5.
+            light_adapt (float, optional): Light adaptation. Defaults to 0.0.
+            color_adapt (float, optional): Color adaptation. Defaults to 0.0.
+            as_image (bool, optional): If True, return as PIL Image. Defaults to True.
+            as_bytes (bool, optional): If True, return as JPEG bytes. Defaults to False.
+
+        Returns:
+            Image.Image | np.ndarray | bytes: Preview as PIL Image (default), numpy array, or bytes.
         """
         return HDRI._render_from_file(
             input_path=input_path,
@@ -284,10 +342,19 @@ class HDRI(Texture):
         as_image: bool = True,
         as_bytes: bool = False,
     ):
-        """Renders a preview from an .exr file using shared tone-mapping logic.
+        """Render a preview from an .exr file using tone mapping.
 
-        This shares the same implementation as `render_from_hdr`; the file
-        extension on `input_path` determines the loader used internally.
+        Args:
+            input_path (str | Path): Path to the .exr file.
+            gamma (float, optional): Gamma correction value. Defaults to 2.4.
+            intensity (float, optional): Intensity for tone mapping. Defaults to 0.5.
+            light_adapt (float, optional): Light adaptation. Defaults to 0.0.
+            color_adapt (float, optional): Color adaptation. Defaults to 0.0.
+            as_image (bool, optional): If True, return as PIL Image. Defaults to True.
+            as_bytes (bool, optional): If True, return as JPEG bytes. Defaults to False.
+
+        Returns:
+            Image.Image | np.ndarray | bytes: Preview as PIL Image (default), numpy array, or bytes.
         """
         return HDRI._render_from_file(
             input_path=input_path,
@@ -299,7 +366,7 @@ class HDRI(Texture):
             as_bytes=as_bytes,
         )
 
-    def render_preview(
+    def render_pixmap(
         self,
         gamma: float = 2.4,
         intensity: float = 0.5,
@@ -308,7 +375,19 @@ class HDRI(Texture):
         as_image: bool = True,
         as_bytes: bool = False,
     ):
-        """Render a preview for this HDRI's own `path`."""
+        """Render a preview for this HDRI object's own file path.
+
+        Args:
+            gamma (float, optional): Gamma correction value. Defaults to 2.4.
+            intensity (float, optional): Intensity for tone mapping. Defaults to 0.5.
+            light_adapt (float, optional): Light adaptation. Defaults to 0.0.
+            color_adapt (float, optional): Color adaptation. Defaults to 0.0.
+            as_image (bool, optional): If True, return as PIL Image. Defaults to True.
+            as_bytes (bool, optional): If True, return as JPEG bytes. Defaults to False.
+
+        Returns:
+            Image.Image | np.ndarray | bytes: Preview as PIL Image (default), numpy array, or bytes.
+        """
         return self._render_from_file(
             input_path=self.path,
             gamma=gamma,
