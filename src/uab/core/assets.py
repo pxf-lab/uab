@@ -33,9 +33,17 @@ class Asset(ABC):
     @classmethod
     def from_dict(cls, data: dict) -> "Asset":
         """
-        Create an Asset from a plain dictionary coming from the API / DB.
+        Creates an Asset instance from a plain dictionary coming from the API or database.
 
-        Expects keys compatible with the backend model / API schema.
+        Args:
+            data (dict): A dictionary containing asset fields. Keys should be compatible 
+                with the backend model or API schema.
+
+        Returns:
+            Asset: An instance of the Asset class populated with values from the dictionary.
+
+        Raises:
+            ValueError: If the input data is None.
         """
         if data is None:
             raise ValueError("Cannot create Asset from None")
@@ -54,7 +62,10 @@ class Asset(ABC):
 
     def to_dict(self) -> dict:
         """
-        Convert this Asset into a serialisable dictionary suitable for API calls.
+        Converts this Asset into a serializable dictionary suitable for API calls.
+
+        Returns:
+            dict: A dictionary representation of this Asset object, with all core fields.
         """
         return {
             "id": self.id,
