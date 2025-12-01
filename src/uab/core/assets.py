@@ -298,3 +298,23 @@ class HDRI(Texture):
             as_image=as_image,
             as_bytes=as_bytes,
         )
+
+    def render_preview(
+        self,
+        gamma: float = 2.4,
+        intensity: float = 0.5,
+        light_adapt: float = 0.0,
+        color_adapt: float = 0.0,
+        as_image: bool = True,
+        as_bytes: bool = False,
+    ):
+        """Render a preview for this HDRI's own `path`."""
+        return self._render_from_file(
+            input_path=self.path,
+            gamma=gamma,
+            intensity=intensity,
+            light_adapt=light_adapt,
+            color_adapt=color_adapt,
+            as_image=as_image,
+            as_bytes=as_bytes,
+        )
