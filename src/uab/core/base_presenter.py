@@ -7,6 +7,7 @@ import platform
 from typing import List
 
 from uab.core import utils
+from uab.core.assets import Asset
 from uab.frontend.thumbnail import Thumbnail
 from uab.backend.asset_service import AssetService
 
@@ -18,9 +19,9 @@ class Presenter(QObject):
         SERVER_URL = "http://127.0.0.1:8000"
         self.asset_service = AssetService(SERVER_URL, LOCAL_ASSETS_DIR)
         self.ROOT_ASSET_DIRECTORY = "Assets"
-        self.assets = []
+        self.assets: list[Asset] = []
         self.thumbnails = []
-        self.current_asset = None
+        self.current_asset: Asset | None = None
 
         self.widget = view
         self.win = None
@@ -59,7 +60,7 @@ class Presenter(QObject):
         raise ImplementedByDerivedClassError(
             self.__class__.__name__, "set_current_context_menu_options")
 
-    def instantiate_asset(self, asset: dict):
+    def instantiate_asset(self, asset: Asset):
         raise ImplementedByDerivedClassError(
             self.__class__.__name__, "instantiate_asset")
 
@@ -98,43 +99,46 @@ class Presenter(QObject):
             self.asset_service.add_asset_to_db(asset)
             self._refresh_browser()
             self.widget.show_message(
-                f"Imported asset! {asset['name']}", "info", 3000)
+                f"Imported asset! {asset.name}", "info", 3000)
 
-    def on_delete_asset(self, asset: dict):
-        self.asset_service.remove_asset_from_db(asset['id'])
+    def on_delete_asset(self, asset: Asset):
+        if asset.id is None:
+            print("Error: Cannot delete asset without id")
+            return
+        self.asset_service.remove_asset_from_db(asset.id)
         self._refresh_browser()
         self.widget.show_browser()
         self.widget.show_message(
-            f"Deleted asset: {asset['name']}", "info", 3000)
+            f"Deleted asset: {asset.name}", "info", 3000)
 
     def on_renderer_changed(self, renderer_text: str):
         self.widget.show_message(
             f"Renderer changed to {renderer_text}", "info", 3000)
 
-    def on_asset_thumbnail_clicked(self, asset: dict) -> None:
-        thumbnail = self.get_thumbnail_by_id(asset['id'])
+    def on_asset_thumbnail_clicked(self, asset: Asset) -> None:
+        if asset.id is None:
+            print("Error: Asset has no id")
+            return
+        thumbnail = self.get_thumbnail_by_id(asset.id)
         self.current_asset = asset
         self.widget.set_new_selected_thumbnail(thumbnail)
         self.widget.show_message(
-            f"Asset clicked: {self.current_asset['name']}", "info", 3000)
+            f"Asset clicked: {self.current_asset.name}", "info", 3000)
 
     def get_thumbnail_by_id(self, id: int) -> Thumbnail:
         return next((p for p in self.thumbnails if p.asset_id == id), None)
 
-    def on_asset_thumbnail_double_clicked(self, asset: dict):
+    def on_asset_thumbnail_double_clicked(self, asset: Asset):
         self.widget.show_asset_detail(asset)
 
-    def on_edit_metadata(self, asset: dict):
+    def on_edit_metadata(self, asset: Asset):
         pass
 
-    def on_save_metadata_changes(self, asset: dict):
-        pass
-
-    def on_save_metadata_changes(self, asset: dict):
+    def on_save_metadata_changes(self, asset: Asset):
         self.asset_service.update_asset(asset)
         self._refresh_browser()
         self.widget.show_message(
-            f"Saved metadata changes for asset: {asset['name']}", "info", 3000)
+            f"Saved metadata changes for asset: {asset.name}", "info", 3000)
 
     def _automatically_refresh_browser(self):
         # TODO: make this smarter: only refresh if there's anything new.
@@ -153,18 +157,15 @@ class Presenter(QObject):
     def _load_assets(self):
         return self.asset_service.get_assets()
 
-    def _create_thumbnails_list(self, assets: list) -> List[Thumbnail]:
+    def _create_thumbnails_list(self, assets: list[Asset]) -> List[Thumbnail]:
         """
-        From a flat list of asset dicts, create a list of Thumbnail widgets.
+        From a flat list of Asset objects, create a list of Thumbnail widgets.
         """
         thumbnails: List[Thumbnail] = []
         if not assets:
             return thumbnails
 
         for asset in assets:
-            if not isinstance(asset, dict):
-                continue
-
             asset_thumbnail = Thumbnail(
                 asset,
                 parent=None,
@@ -188,32 +189,32 @@ class Presenter(QObject):
 
         return thumbnails
 
-    def on_open_image_requested(self, asset: dict) -> None:
-        print(f"Opening image for asset: {asset['name']}")
+    def on_open_image_requested(self, asset: Asset) -> None:
+        print(f"Opening image for asset: {asset.name}")
         self.widget.show_message(
-            f"Opening image for asset: {asset['name']}", "info", 3000)
+            f"Opening image for asset: {asset.name}", "info", 3000)
         if platform.system() == 'Darwin':
-            subprocess.call(('open', asset['path']))
+            subprocess.call(('open', asset.path))
         elif platform.system() == 'Windows':
-            os.startfile(asset['path'])
+            os.startfile(asset.path)
 
-    def on_reveal_in_file_system_requested(self, asset: dict) -> None:
-        print(f"Revealing in file system for asset: {asset['name']}")
-        asset_path = pl.Path(asset['path'])
+    def on_reveal_in_file_system_requested(self, asset: Asset) -> None:
+        print(f"Revealing in file system for asset: {asset.name}")
+        asset_path = pl.Path(asset.path)
         if platform.system() == "Windows":
             os.startfile(str(asset_path.parent))
         elif platform.system() == "Darwin":
             subprocess.call(('open', str(asset_path.parent)))
 
-    def on_instantiate_requested(self, asset: dict) -> None:
-        print(f"Instantiating asset: {asset['name']}")
+    def on_instantiate_requested(self, asset: Asset) -> None:
+        print(f"Instantiating asset: {asset.name}")
         self.instantiate_asset(asset)
 
-    def on_replace_texture_requested(self, asset: dict) -> None:
-        print(f"Replacing texture for asset: {asset['name']}")
+    def on_replace_texture_requested(self, asset: Asset) -> None:
+        print(f"Replacing texture for asset: {asset.name}")
         self.replace_texture(asset)
 
-    def replace_texture(self, asset: dict) -> None:
+    def replace_texture(self, asset: Asset) -> None:
         raise ImplementedByDerivedClassError(
             self.__class__.__name__, "replace_texture")
 
