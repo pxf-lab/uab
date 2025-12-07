@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core import utils
+from uab.core.assets import Asset
 from uab.backend.asset_service import AssetService
 
 
@@ -27,13 +28,13 @@ class Detail(QWidget):
     """
 
     back_clicked = Signal()
-    save_clicked = Signal(dict)
+    save_clicked = Signal(object)  # Emits Asset object
     delete_clicked = Signal(int)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
 
-        self.current_asset: Optional[dict] = None
+        self.current_asset: Optional[Asset] = None
         self.is_edit_mode: bool = False
 
         self._init_ui()
@@ -303,31 +304,30 @@ class Detail(QWidget):
 
         main_layout.addWidget(right_panel, 3)
 
-    def draw_details(self, asset: dict) -> None:
+    def draw_details(self, asset: Asset) -> None:
         """
         Draw the full details view for the given asset.
 
         Args:
-            asset: Dictionary containing asset data with keys:
-                   name, directory_path, description, tags, id, preview_image_file_path
+            asset: Asset object containing asset data
         """
         self.current_asset = asset
         self.display_metadata(asset)
         self._set_edit_mode(False)
 
-    def display_metadata(self, asset: dict) -> None:
+    def display_metadata(self, asset: Asset) -> None:
         """
         Display metadata for the given asset without entering edit mode.
 
         Args:
-            asset: Dictionary containing asset data
+            asset: Asset object containing asset data
         """
         if not asset:
             return
 
         # TODO: @thumbnail.py has a method that does exactly the same thing.
         pixmap = QPixmap()
-        path = Path(asset.get('path', ''))
+        path = Path(asset.path or '')
         if path and path.exists():
             try:
                 byte_image = utils.hdri_to_pixmap_format(
@@ -358,7 +358,7 @@ class Detail(QWidget):
             )
 
         # Display name
-        name = asset.get('name', 'Unnamed Asset')
+        name = asset.name or 'Unnamed Asset'
         self.name_display.setText(name)
         self.name_edit.setText(name)
 
@@ -367,12 +367,12 @@ class Detail(QWidget):
         self.path_edit.setText(str(path))
 
         # Display description
-        description = asset.get('description') or 'No description provided'
+        description = asset.description or 'No description provided'
         self.desc_display.setText(description)
-        self.desc_edit.setPlainText(asset.get('description', ''))
+        self.desc_edit.setPlainText(asset.description or '')
 
         # Display tags
-        tags = asset.get('tags', [])
+        tags = asset.tags or []
         if isinstance(tags, list):
             tags_str = ', '.join(tags) if tags else 'No tags'
         else:
@@ -382,43 +382,43 @@ class Detail(QWidget):
             ', '.join(tags) if isinstance(tags, list) else str(tags))
 
         # Display author
-        author = asset.get('author')
+        author = asset.author
         self.author_display.setText(author or 'Unknown')
         self.author_edit.setText(author or '')
 
         # Display date created
-        date_created = asset.get('date_created', 'Unknown')
-        self.date_created_display.setText(date_created.split('T')[0])
-        self.date_created_edit.setText(date_created.split('T')[0])
+        date_created = asset.date_created or 'Unknown'
+        self.date_created_display.setText(date_created.split('T')[0] if date_created else 'Unknown')
+        self.date_created_edit.setText(date_created.split('T')[0] if date_created else '')
 
-    def edit_metadata(self, asset: dict) -> None:
+    def edit_metadata(self, asset: Asset) -> None:
         """
         Enter edit mode for the asset metadata.
 
         Args:
-            asset: Dictionary containing asset data
+            asset: Asset object containing asset data
         """
         self.current_asset = asset
         self.display_metadata(asset)
         self._set_edit_mode(True)
 
-    def save_metadata_changes(self) -> dict:
+    def save_metadata_changes(self) -> Asset | None:
         """
         Collect the edited metadata and prepare it for saving.
 
         Returns:
-            Dictionary with updated asset data
+            Asset object with updated metadata, or None if no current asset
         """
         if not self.current_asset:
-            return {}
+            return None
 
         tags_text = self.tags_edit.text()
         tags = [tag.strip() for tag in tags_text.split(
             ',') if tag.strip()] if tags_text else []
 
         if not utils.is_valid_date(self.date_created_edit.text()):
-            self.date_created_edit.setText(
-                self.current_asset.get('date_created', ''))
+            date_created = self.current_asset.date_created or ''
+            self.date_created_edit.setText(date_created.split('T')[0] if date_created else '')
 
         updated_asset = AssetService.create_asset_request_body(
             asset_path=self.path_edit.text(),
@@ -430,8 +430,7 @@ class Detail(QWidget):
         )
 
         # Preserve the asset's ID
-        if 'id' in self.current_asset:
-            updated_asset['id'] = self.current_asset['id']
+        updated_asset.id = self.current_asset.id
 
         return updated_asset
 
@@ -474,8 +473,8 @@ class Detail(QWidget):
         self.back_clicked.emit()
 
     def _on_delete_clicked(self) -> None:
-        self.delete_clicked.emit(
-            self.current_asset['id'] if self.current_asset else -1)
+        asset_id = self.current_asset.id if self.current_asset and self.current_asset.id is not None else -1
+        self.delete_clicked.emit(asset_id)
 
     def _on_edit_clicked(self) -> None:
         """Handle edit button click."""
@@ -486,7 +485,8 @@ class Detail(QWidget):
         """Handle save button click."""
         updated_asset = self.save_metadata_changes()
         if updated_asset:
-            # Update the display with the new values
+            # Update current asset and display with the new values
+            self.current_asset = updated_asset
             self.display_metadata(updated_asset)
             self._set_edit_mode(False)
             # Emit signal with updated asset
