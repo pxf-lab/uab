@@ -1,3 +1,4 @@
+from typing import Optional
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -6,6 +7,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
 )
+from uab.core.assets import Asset
 from uab.core.desktop_presenter import DesktopPresenter
 from uab.core.houdini_presenter import HoudiniPresenter
 from uab.frontend.browser import Browser
@@ -27,12 +29,12 @@ class MainWidget(QWidget):
     back_clicked = Signal()
     delete_asset_clicked = Signal(int)
     widget_closed = Signal()
-    save_metadata_changes_clicked = Signal(dict)
+    save_metadata_changes_clicked = Signal(object)  # Emits Asset object
 
     def __init__(self, dcc: str, client_id: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.client_id = client_id
-        self.current_asset = None
+        self.current_asset: Optional[Asset] = None
         self.current_thumbnails = []
 
         # Root layout
@@ -85,7 +87,7 @@ class MainWidget(QWidget):
             case _:
                 raise ValueError(f"Invalid DCC: {dcc}")
 
-    def _on_save_metadata_changes(self, asset: dict) -> None:
+    def _on_save_metadata_changes(self, asset: Asset) -> None:
         self.save_metadata_changes_clicked.emit(asset)
 
     def _on_back_clicked(self) -> None:
@@ -94,7 +96,7 @@ class MainWidget(QWidget):
     def show_browser(self) -> None:
         self.stacked.setCurrentWidget(self.browser)
 
-    def show_asset_detail(self, asset: dict) -> None:
+    def show_asset_detail(self, asset: Asset) -> None:
         self.stacked.setCurrentWidget(self.detail)
         self.detail.draw_details(asset)
 
@@ -124,7 +126,7 @@ class MainWidget(QWidget):
     def _on_delete_asset_clicked(self, asset_id: int) -> None:
         self.delete_asset_clicked.emit(asset_id)
 
-    def set_current_asset(self, asset: dict) -> None:
+    def set_current_asset(self, asset: Asset) -> None:
         self.current_asset = asset
 
     def draw_thumbnails(self, thumbnails: list[Thumbnail]) -> None:
