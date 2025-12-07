@@ -1,4 +1,5 @@
 from typing import List
+from uab.core.assets import Asset
 from uab.core.base_presenter import Presenter
 
 
@@ -6,11 +7,11 @@ class DesktopPresenter(Presenter):
     def __init__(self, view):
         super().__init__(view)
 
-    def instantiate_asset(self, asset: dict):
+    def instantiate_asset(self, asset: Asset):
         self.widget.show_message(
             f"You must be within an application to instantiate an asset.", "info", 3000)
 
-    def replace_texture(self, asset: dict):
+    def replace_texture(self, asset: Asset):
         self.widget.show_message(
             f"You must be within an application to replace a texture.", "info", 3000)
 
