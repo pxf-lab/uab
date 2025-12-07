@@ -1,4 +1,4 @@
-from typing import Optional, Dict, List
+from typing import Optional, List
 import os
 from PySide6.QtCore import QPoint, Qt, QEvent, Signal, QTimer
 from PySide6.QtGui import QPixmap, QColor
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 from uab.core import utils
+from uab.core.assets import Asset
 
 
 class LargePreviewPopup(QDialog):
@@ -73,26 +74,25 @@ class LargePreviewPopup(QDialog):
 
 
 class Thumbnail(QWidget):
-    asset_clicked = Signal(dict)
-    asset_double_clicked = Signal(dict)
-    open_image_requested = Signal(dict)
-    reveal_in_file_system_requested = Signal(dict)
-    instantiate_requested = Signal(dict)
-    replace_texture_requested = Signal(dict)
-    # This has to be emitted as an object; emitting as a dict triggers a slot resolution
-    # issue in Houdini, where it looks for a QVariantMap, since PySide6 automatically
-    # converts the signal.
+    # Signals emit Asset objects as 'object' type to avoid QVariantMap conversion
+    # issues in Houdini where PySide6 automatically converts dict signals.
+    asset_clicked = Signal(object)
+    asset_double_clicked = Signal(object)
+    open_image_requested = Signal(object)
+    reveal_in_file_system_requested = Signal(object)
+    instantiate_requested = Signal(object)
+    replace_texture_requested = Signal(object)
     context_menu_requested = Signal(object)
 
     def __init__(
         self,
-        asset: Dict,
+        asset: Asset,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.asset = asset
-        self.asset_id = asset.get('id')
-        self.asset_name = asset.get('name', '')
+        self.asset_id = asset.id
+        self.asset_name = asset.name
         self.thumbnail: QPixmap = self._load_thumbnail_preview_from_file()
         self.is_selected = False
         self._hover = False
@@ -167,9 +167,9 @@ class Thumbnail(QWidget):
         self._update_pixmap_display()
 
     def _load_thumbnail_preview_from_file(self) -> QPixmap:
-        """Load thumbnail from asset's directory_path or preview_image_file_path."""
+        """Load thumbnail from asset's path or preview_image_file_path."""
         pixmap = QPixmap()
-        dir_path = self.asset.get('path') or ''
+        dir_path = self.asset.path or ''
 
         # Normalize the directory path
         norm = os.path.normpath(str(dir_path)) if dir_path else ''
