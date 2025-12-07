@@ -6,6 +6,7 @@ except ImportError:
 from typing import List
 
 from PySide6.QtCore import Slot
+from uab.core.assets import Asset
 from uab.core.base_presenter import Presenter
 from uab.core.utils import get_modifier_key
 
@@ -14,16 +15,16 @@ class HoudiniPresenter(Presenter):
     def __init__(self, view):
         super().__init__(view)
 
-    def instantiate_asset(self, asset: dict):
+    def instantiate_asset(self, asset: Asset):
         self.create_light_with_texture(
-            "domelight", asset["path"], f"instantiated_dome_light")
+            "domelight", asset.path, f"instantiated_dome_light")
         self.widget.show_message(
-            f"Instantiated: {asset['name']}", "info", 3000)
+            f"Instantiated: {asset.name}", "info", 3000)
 
-    def replace_texture(self, asset: dict):
+    def replace_texture(self, asset: Asset):
         self._set_dome_light_texture(asset)
         self.widget.show_message(
-            f"Texture replaced with: {asset['name']}", "info", 3000)
+            f"Texture replaced with: {asset.name}", "info", 3000)
 
     def create_light_with_texture(self, light_type: str, path: str, light_name: str):
         stage = hou.node("/stage")
@@ -70,10 +71,10 @@ class HoudiniPresenter(Presenter):
             return False
         return current_node.type().name() == "domelight::3.0"
 
-    def _set_dome_light_texture(self, asset: dict):
+    def _set_dome_light_texture(self, asset: Asset):
         light = self._get_currently_selected_node()
         if not light:
             return
         tex = light.parm("xn__inputstexturefile_r3ah")
-        tex.set(asset["path"])
+        tex.set(asset.path)
         return light
