@@ -70,26 +70,27 @@ class Presenter(QObject):
             return
 
         if os.path.isdir(asset_path):
-            print(f"Importing assets from directory: {asset_path}")
+            print(
+                f"Importing assets from directory (including nested): {asset_path}")
             imported_count = 0
             skipped_count = 0
-            print(os.listdir(asset_path))
-            for filename in os.listdir(asset_path):
-                file_path = os.path.join(asset_path, filename)
-                # TODO: add support for other file types
-                if os.path.isfile(file_path) and (filename.lower().endswith('.hdr') or filename.lower().endswith('.exr')):
-                    asset = self.asset_service.create_asset_request_body(
-                        file_path,
-                        name=utils.file_name_to_display_name(
-                            pl.Path(file_path)),
-                        tags=utils.tags_from_file_name(pl.Path(file_path)))
-                    self.asset_service.add_asset_to_db(asset)
-                    imported_count += 1
-                else:
-                    skipped_count += 1
+            root_path = pl.Path(asset_path)
+            # TODO: add support for other file types
+            for file_path in root_path.rglob('*'):
+                if file_path.is_file():
+                    filename = file_path.name
+                    if filename.lower().endswith('.hdr') or filename.lower().endswith('.exr'):
+                        asset = self.asset_service.create_asset_request_body(
+                            str(file_path),
+                            name=utils.file_name_to_display_name(file_path),
+                            tags=utils.tags_from_file_name(file_path))
+                        self.asset_service.add_asset_to_db(asset)
+                        imported_count += 1
+                    else:
+                        skipped_count += 1
             self._refresh_browser()
             self.widget.show_message(
-                f"Imported {imported_count} .hdr asset(s) from directory. Skipped {skipped_count} non-hdr file(s).", "info", 3000)
+                f"Imported {imported_count} .hdr/.exr asset(s) from directory (including nested). Skipped {skipped_count} non-hdr/exr file(s).", "info", 3000)
         else:
             print(f"Importing asset: {asset_path}")
             asset = self.asset_service.create_asset_request_body(
