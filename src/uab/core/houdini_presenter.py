@@ -5,6 +5,7 @@ except ImportError:
     pass
 from typing import List
 
+import sys
 from PySide6.QtCore import Slot
 from uab.core.assets import Asset
 from uab.core.base_presenter import Presenter
@@ -39,22 +40,23 @@ class HoudiniPresenter(Presenter):
         modifier_key = get_modifier_key()
 
         options = [
-            {"label": "Instantiate", "callback": self.on_instantiate_requested,
+            {"label": "New Light", "callback": self.on_instantiate_requested,
                 "shortcut": f"{modifier_key}+LMB"},
             {"label": "Open Image", "callback": self.on_open_image_requested,
                 "shortcut": ""},
-            {"label": "Reveal in File System",
+            {"label": "Open File Location",
                 "callback": self.on_reveal_in_file_system_requested,
                 "shortcut": ""},
             {"label": "Remove Asset",
                 "callback": self.on_delete_asset,
                 "shortcut": ""},
         ]
+        update_shortcut = "Opt+LMB" if sys.platform == "darwin" else "Alt+LMB"
         if self._is_dome_light_currently_selected():
             set_texture_option = {
-                "label": "Set Texture",
+                "label": "Update Light",
                 "callback": self._set_dome_light_texture,
-                "shortcut": "Alt+LMB"
+                "shortcut": update_shortcut
             }
             options.insert(0, set_texture_option)
         context["object"].create_context_menu_options(

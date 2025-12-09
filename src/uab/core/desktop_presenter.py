@@ -19,7 +19,7 @@ class DesktopPresenter(Presenter):
         options = [
             {"label": "Open Image", "callback": self.on_open_image_requested,
                 "shortcut": ""},
-            {"label": "Reveal in File System",
+            {"label": "Open File Location",
                 "callback": self.on_reveal_in_file_system_requested,
                 "shortcut": ""},
             {"label": "Remove Asset",
