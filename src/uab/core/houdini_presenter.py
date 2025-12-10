@@ -18,7 +18,7 @@ class HoudiniPresenter(Presenter):
 
     def instantiate_asset(self, asset: Asset):
         self.create_light_with_texture(
-            "domelight", asset.path, f"instantiated_dome_light")
+            "domelight", asset.path)
         self.widget.show_message(
             f"Instantiated: {asset.name}", "info", 3000)
 
@@ -27,9 +27,9 @@ class HoudiniPresenter(Presenter):
         self.widget.show_message(
             f"Texture replaced with: {asset.name}", "info", 3000)
 
-    def create_light_with_texture(self, light_type: str, path: str, light_name: str):
+    def create_light_with_texture(self, light_type: str, path: str):
         stage = hou.node("/stage")
-        light = stage.createNode(light_type, node_name=light_name)
+        light = stage.createNode(light_type)
         tex = light.parm("xn__inputstexturefile_r3ah")
         tex.set(path)
         light.moveToGoodPosition()
