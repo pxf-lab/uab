@@ -88,6 +88,9 @@ def create_asset(asset: AssetCreate, db: Session = Depends(database.get_db)):
         author=asset.author,
         date_created=asset.date_created,
         date_added=asset.date_added,
+        lods=asset.lods,
+        current_lod=asset.current_lod,
+        color_space=asset.color_space,
     )
     db.add(db_asset)
     db.commit()
