@@ -84,7 +84,7 @@ class Detail(QWidget):
         self.btn_edit.setMaximumWidth(80)
         self.btn_edit.clicked.connect(self._on_edit_clicked)
 
-        self.btn_delete = QPushButton("Delete")
+        self.btn_delete = QPushButton("Remove")
         self.btn_delete.setToolTip(
             "Remove asset from library (does not delete the file on your machine)")
         self.btn_delete.setMaximumWidth(80)
