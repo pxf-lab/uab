@@ -51,12 +51,11 @@ class HoudiniPresenter(Presenter):
                 "callback": self.on_delete_asset,
                 "shortcut": ""},
         ]
-        update_shortcut = "Opt+LMB" if sys.platform == "darwin" else "Alt+LMB"
         if self._is_dome_light_currently_selected():
             set_texture_option = {
                 "label": "Update Light",
                 "callback": self._set_dome_light_texture,
-                "shortcut": update_shortcut
+                "shortcut": f"{modifier_key}+LMB"
             }
             options.insert(0, set_texture_option)
         context["object"].create_context_menu_options(
