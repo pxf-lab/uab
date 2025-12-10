@@ -7,7 +7,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QTextEdit, QPushButton, QScrollArea,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QComboBox
 )
 
 from uab.core import utils
@@ -251,8 +251,16 @@ class Detail(QWidget):
             Qt.TextInteractionFlag.TextSelectableByMouse)
         self.lod_display.setStyleSheet(
             "color: #ccc; padding: 5px; font-size: 11pt;")
+
+        # LOD selection combo box (always visible, not part of edit mode)
+        self.lod_combo = QComboBox()
+        self.lod_combo.setVisible(False)  # Only visible when asset has LODs
+        self.lod_combo.setStyleSheet("padding: 5px; font-size: 11pt;")
+        self.lod_combo.currentTextChanged.connect(self._on_lod_changed)
+
         lod_layout.addWidget(lod_label)
         lod_layout.addWidget(self.lod_display)
+        lod_layout.addWidget(self.lod_combo)
         content_layout.addLayout(lod_layout)
 
         content_layout.addStretch()
@@ -432,13 +440,35 @@ class Detail(QWidget):
                     lod_list.append(f"  {marker} {lod_level}: {lod_name}")
                 lod_info_parts.append("\nAvailable LODs:")
                 lod_info_parts.extend(lod_list)
+
+                # Populate combo box with LOD options
+                # Prevent signal during update
+                self.lod_combo.blockSignals(True)
+                self.lod_combo.clear()
+                self.lod_combo.addItem("Base (no LOD)", None)
+                for lod_level in sorted(asset.lods.keys()):
+                    self.lod_combo.addItem(lod_level, lod_level)
+
+                if asset.current_lod:
+                    index = self.lod_combo.findData(asset.current_lod)
+                    if index >= 0:
+                        self.lod_combo.setCurrentIndex(index)
+                    else:
+                        self.lod_combo.setCurrentIndex(0)
+                else:
+                    self.lod_combo.setCurrentIndex(0)
+                self.lod_combo.blockSignals(False)
+
+                self.lod_combo.setVisible(True)
             else:
                 lod_info_parts.append("No LODs defined")
+                self.lod_combo.setVisible(False)
 
             self.lod_display.setText("\n".join(lod_info_parts))
             self.lod_display.setVisible(True)
         else:
             self.lod_display.setVisible(False)
+            self.lod_combo.setVisible(False)
 
     def edit_metadata(self, asset: Asset) -> None:
         """
@@ -481,6 +511,13 @@ class Detail(QWidget):
 
         # Preserve the asset's ID
         updated_asset.id = self.current_asset.id
+
+        # Preserve LOD data if the asset is a Texture
+        if isinstance(self.current_asset, Texture) and isinstance(updated_asset, Texture):
+            updated_asset.lods = self.current_asset.lods
+            updated_asset.current_lod = self.current_asset.current_lod
+            if hasattr(self.current_asset, 'color_space'):
+                updated_asset.color_space = self.current_asset.color_space
 
         return updated_asset
 
@@ -547,3 +584,19 @@ class Detail(QWidget):
         if self.current_asset:
             self.display_metadata(self.current_asset)
         self._set_edit_mode(False)
+
+    def _on_lod_changed(self, text: str) -> None:
+        """Handle LOD combo box selection change."""
+        if not self.current_asset or not isinstance(self.current_asset, Texture):
+            return
+
+        # Get the selected LOD value (None for "Base", or the LOD level string)
+        selected_lod = self.lod_combo.currentData()
+
+        # Update the asset's current_lod
+        if isinstance(self.current_asset, Texture):
+            self.current_asset.current_lod = selected_lod
+            # Update the display to reflect the change
+            self.display_metadata(self.current_asset)
+            # Emit save signal to persist the change
+            self.save_clicked.emit(self.current_asset)
