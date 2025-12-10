@@ -122,14 +122,16 @@ class Asset(ABC):
 
 
 class Texture(Asset):
-    def __init__(self, name: str, path: str, color_space: str):
+    def __init__(self, name: str, path: str, color_space: str = None):
         super().__init__(name, path)
         self.color_space = color_space
 
 
 class HDRI(Texture):
-    def __init__(self, name: str, path: str, color_space: str):
+    def __init__(self, name: str, path: str, color_space: str = None):
         super().__init__(name, path, color_space)
+        # remove the dot from the file type
+        self.file_type = super().path.suffix.upper()[1:]
 
     @staticmethod
     def _load_hdr(input_path: Path) -> np.ndarray:
