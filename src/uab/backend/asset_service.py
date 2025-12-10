@@ -4,7 +4,7 @@ from typing import Iterable, List, Sequence
 
 import requests
 
-from uab.core.assets import Asset
+from uab.core.assets import Asset, HDRI, Texture
 
 
 class AssetService:
@@ -12,9 +12,69 @@ class AssetService:
         self.url = server_url
         self.asset_directory_path = pl.Path(asset_directory_path)
 
+    def _detect_asset_type(self, data: dict) -> type[Asset]:
+        """Detect the appropriate Asset subclass based on file extension.
+
+        Args:
+            data: Dictionary containing asset data with a 'path' field.
+
+        Returns:
+            The appropriate Asset class (HDRI, Texture, or Asset).
+        """
+        path = data.get("path", "")
+        if not path:
+            return Asset
+
+        path_obj = pl.Path(path)
+        ext = path_obj.suffix.lower()
+
+        # HDRI files
+        if ext in [".hdr", ".exr"]:
+            return HDRI
+
+        # For now, only HDRI is supported as Texture subclass
+        # Other texture types can be added here later
+        return Asset
+
+    def _build_asset_from_data(self, data: dict) -> Asset:
+        """Convert a single asset payload into the appropriate Asset instance.
+
+        Args:
+            data: Dictionary containing asset data from API.
+
+        Returns:
+            An instance of Asset, HDRI, or Texture based on file type.
+        """
+        asset_class = self._detect_asset_type(data)
+
+        # For HDRI, manually construct to ensure file_type is set correctly
+        if asset_class == HDRI:
+            # HDRI inherits from Texture, so use Texture.from_dict approach
+            # but construct as HDRI to get file_type set in __init__
+            hdri = HDRI(
+                name=data.get("name", ""),
+                path=data.get("path", ""),
+                color_space=data.get("color_space"),
+                lods=data.get("lods"),
+                current_lod=data.get("current_lod"),
+            )
+            # Set other Asset fields
+            hdri.id = data.get("id")
+            hdri.description = data.get("description")
+            hdri.preview_image_file_path = data.get("preview_image_file_path")
+            hdri.tags = data.get("tags") or []
+            hdri.author = data.get("author")
+            hdri.date_created = data.get("date_created")
+            hdri.date_added = data.get("date_added")
+            return hdri
+        elif asset_class == Texture:
+            return Texture.from_dict(data)
+        else:
+            return Asset.from_api_payload(data)
+
     def _build_assets_from_response(self, payload: Sequence[dict]) -> List[Asset]:
         """Convert a list payload into Asset instances."""
-        return [Asset.from_api_payload(item) for item in payload or []]
+        return [self._build_asset_from_data(item) for item in payload or []]
 
     def get_assets(self) -> list[Asset]:
         """Fetch all assets from the server as Asset objects."""
@@ -33,7 +93,7 @@ class AssetService:
             response = requests.get(f"{self.url}/assets/{asset_id}")
             response.raise_for_status()
             data = response.json()
-            return Asset.from_api_payload(data)
+            return self._build_asset_from_data(data)
         except requests.exceptions.RequestException as e:
             print(f"Error getting asset with id {asset_id}: {e}")
             return None
@@ -71,7 +131,7 @@ class AssetService:
             response = requests.post(
                 f"{self.url}/assets", json=payload)
             response.raise_for_status()
-            return Asset.from_api_payload(response.json())
+            return self._build_asset_from_data(response.json())
         except requests.exceptions.RequestException as e:
             print(f"Error posting asset {asset_name} at {asset_path}: {e}")
             return None
@@ -102,7 +162,7 @@ class AssetService:
             response = requests.put(
                 f"{self.url}/assets/{asset.id}", json=payload)
             response.raise_for_status()
-            return Asset.from_api_payload(response.json())
+            return self._build_asset_from_data(response.json())
         except requests.exceptions.RequestException as e:
             print(f"Error updating asset with id {asset.id}: {e}")
             return None
@@ -125,6 +185,9 @@ class AssetService:
         tags: list[str] | None = None,
         author: str | None = None,
         date_created: str | None = None,
+        lods: dict[str, str] | None = None,
+        current_lod: str | None = None,
+        color_space: str | None = None,
     ) -> Asset:
         """
         Create an Asset object from file path and optional metadata.
@@ -141,19 +204,49 @@ class AssetService:
             author: Optional author name.
             date_created: Optional creation date (YYYY-MM-DD format).
                          Defaults to today if not provided.
+            lods: Optional dictionary mapping LOD levels to file paths.
+            current_lod: Optional currently active LOD level.
+            color_space: Optional color space for texture assets.
 
         Returns:
-            An Asset instance ready to be added to the database.
+            An Asset instance (HDRI, Texture, or Asset) ready to be added to the database.
         """
-        return Asset(
-            name=name or pl.Path(asset_path).name,
-            path=str(asset_path),
-            asset_id=None,  # Will be assigned by the server on creation
-            description=description,
-            preview_image_file_path=preview_image_file_path,
-            tags=tags or [],
-            author=author,
-            date_created=date_created or datetime.now().isoformat().split('T')[
-                0],
-            date_added=datetime.now().isoformat().split('T')[0],
-        )
+        path_obj = pl.Path(asset_path)
+        ext = path_obj.suffix.lower()
+
+        base_kwargs = {
+            "name": name or path_obj.name,
+            "path": str(asset_path),
+            "asset_id": None,  # Will be assigned by the server on creation
+            "description": description,
+            "preview_image_file_path": preview_image_file_path,
+            "tags": tags or [],
+            "author": author,
+            "date_created": date_created or datetime.now().isoformat().split('T')[0],
+            "date_added": datetime.now().isoformat().split('T')[0],
+        }
+
+        # Create HDRI instance for .hdr and .exr files
+        if ext in [".hdr", ".exr"]:
+            hdri = HDRI(
+                name=base_kwargs["name"],
+                path=base_kwargs["path"],
+                color_space=color_space,
+            )
+            # Set base Asset fields
+            hdri.id = base_kwargs["asset_id"]
+            hdri.description = base_kwargs["description"]
+            hdri.preview_image_file_path = base_kwargs["preview_image_file_path"]
+            hdri.tags = base_kwargs["tags"]
+            hdri.author = base_kwargs["author"]
+            hdri.date_created = base_kwargs["date_created"]
+            hdri.date_added = base_kwargs["date_added"]
+            # Set LOD data if provided
+            if lods:
+                hdri.lods = lods
+            if current_lod is not None:
+                hdri.current_lod = current_lod
+            return hdri
+
+        # For other file types, create base Asset
+        return Asset(**base_kwargs)
