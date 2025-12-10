@@ -4,7 +4,9 @@ from PySide6.QtCore import QObject, QTimer
 import os
 import subprocess
 import platform
-from typing import List
+from typing import List, Dict, Tuple
+import re
+from collections import defaultdict
 
 from uab.core import utils
 from uab.core.assets import Asset
@@ -64,6 +66,53 @@ class Presenter(QObject):
         raise ImplementedByDerivedClassError(
             self.__class__.__name__, "instantiate_asset")
 
+    def _extract_base_name_and_resolution(self, file_path: pl.Path) -> Tuple[str, str | None]:
+        """Extract base name and resolution from a file path.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            Tuple of (base_name, resolution) where resolution is like "1k", "2k", "4k" or None
+        """
+        stem = file_path.stem
+        # Pattern to match resolution suffixes like "1k", "2k", "4k", "8k", etc.
+        resolution_pattern = r'[._-](\d+k)$'
+        match = re.search(resolution_pattern, stem, re.IGNORECASE)
+
+        if match:
+            resolution = match.group(1).lower()
+            # Remove the resolution suffix to get base name
+            base_name = re.sub(resolution_pattern, '',
+                               stem, flags=re.IGNORECASE)
+            return base_name, resolution
+        else:
+            # No resolution found, return the stem as base name
+            return stem, None
+
+    def _group_files_by_lod(self, file_paths: List[pl.Path]) -> Dict[str, Dict[str, pl.Path]]:
+        """Group files by base name and resolution.
+
+        Args:
+            file_paths: List of file paths to group
+
+        Returns:
+            Dictionary mapping base_name to a dict of {resolution: file_path}
+        """
+        grouped = defaultdict(dict)
+
+        for file_path in file_paths:
+            base_name, resolution = self._extract_base_name_and_resolution(
+                file_path)
+            if resolution:
+                grouped[base_name][resolution] = file_path
+            else:
+                # Files without resolution suffix are treated as base assets
+                # Use empty string as key to indicate it's the base/primary file
+                grouped[base_name][""] = file_path
+
+        return dict(grouped)
+
     def on_import_asset(self, asset_path):
         if not asset_path:
             print("Importing asset: MISSING PATH")
@@ -75,19 +124,54 @@ class Presenter(QObject):
             imported_count = 0
             skipped_count = 0
             root_path = pl.Path(asset_path)
-            # TODO: add support for other file types
+
+            # Collect all .hdr/.exr files first
+            hdri_files = []
             for file_path in root_path.rglob('*'):
                 if file_path.is_file():
-                    filename = file_path.name
-                    if filename.lower().endswith('.hdr') or filename.lower().endswith('.exr'):
-                        asset = self.asset_service.create_asset_request_body(
-                            str(file_path),
-                            name=utils.file_name_to_display_name(file_path),
-                            tags=utils.tags_from_file_name(file_path))
-                        self.asset_service.add_asset_to_db(asset)
-                        imported_count += 1
+                    filename = file_path.name.lower()
+                    if filename.endswith('.hdr') or filename.endswith('.exr'):
+                        hdri_files.append(file_path)
                     else:
                         skipped_count += 1
+
+            # Group files by base name to detect LODs
+            grouped_files = self._group_files_by_lod(hdri_files)
+
+            # Process each group
+            for base_name, resolution_files in grouped_files.items():
+                # If we have multiple resolutions (LODs), create one asset with LODs
+                if len(resolution_files) > 1 and any(res != "" for res in resolution_files.keys()):
+                    # Find the base file (without resolution) or use the first one
+                    base_file = resolution_files.get(
+                        "") or list(resolution_files.values())[0]
+
+                    # Build LOD dictionary (excluding the base file if it's marked with "")
+                    lods = {}
+                    for res, file_path in resolution_files.items():
+                        if res:  # Only add non-empty resolution keys
+                            lods[res] = str(file_path)
+
+                    # Use the base file for the main asset path
+                    asset = self.asset_service.create_asset_request_body(
+                        str(base_file),
+                        name=utils.file_name_to_display_name(base_file),
+                        tags=utils.tags_from_file_name(base_file),
+                        lods=lods if lods else None,
+                        current_lod=list(lods.keys())[0] if lods else None,
+                    )
+                    self.asset_service.add_asset_to_db(asset)
+                    imported_count += 1
+                else:
+                    # Single file or no resolution pattern, import as regular asset
+                    file_path = list(resolution_files.values())[0]
+                    asset = self.asset_service.create_asset_request_body(
+                        str(file_path),
+                        name=utils.file_name_to_display_name(file_path),
+                        tags=utils.tags_from_file_name(file_path))
+                    self.asset_service.add_asset_to_db(asset)
+                    imported_count += 1
+
             self._refresh_browser()
             self.widget.show_message(
                 f"Imported {imported_count} .hdr/.exr asset(s) from directory (including nested). Skipped {skipped_count} non-hdr/exr file(s).", "info", 3000)
