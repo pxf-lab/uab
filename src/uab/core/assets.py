@@ -216,6 +216,54 @@ class Texture(Asset):
         """
         return len(self.lods) > 0
 
+    def to_dict(self) -> dict:
+        """Convert this Texture into a serializable dictionary.
+
+        Returns:
+            dict: A dictionary representation including LOD information.
+        """
+        data = super().to_dict()
+        data["color_space"] = self.color_space
+        if self.lods:
+            data["lods"] = self.lods
+        if self.current_lod is not None:
+            data["current_lod"] = self.current_lod
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Texture":
+        """Create a Texture instance from a plain dictionary.
+
+        Args:
+            data (dict): A dictionary containing texture fields including optional LOD data.
+
+        Returns:
+            Texture: An instance of the Texture class populated with values from the dictionary.
+        """
+        # Extract LOD-specific fields before calling parent
+        lods = data.get("lods")
+        current_lod = data.get("current_lod")
+
+        # Create instance using parent's from_dict for base fields
+        texture = cls(
+            name=data.get("name", ""),
+            path=data.get("path", ""),
+            color_space=data.get("color_space"),
+            lods=lods,
+            current_lod=current_lod,
+        )
+
+        # Set other Asset fields that might be in the dict
+        texture.id = data.get("id")
+        texture.description = data.get("description")
+        texture.preview_image_file_path = data.get("preview_image_file_path")
+        texture.tags = data.get("tags") or []
+        texture.author = data.get("author")
+        texture.date_created = data.get("date_created")
+        texture.date_added = data.get("date_added")
+
+        return texture
+
 
 class HDRI(Texture):
     def __init__(self, name: str, path: str, color_space: str = None):
