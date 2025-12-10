@@ -208,6 +208,14 @@ class Texture(Asset):
         lod_path = self.get_lod_path()
         return lod_path if lod_path is not None else self.path
 
+    def has_lods(self) -> bool:
+        """Check if this texture has any LOD levels defined.
+
+        Returns:
+            bool: True if LODs are defined, False otherwise.
+        """
+        return len(self.lods) > 0
+
 
 class HDRI(Texture):
     def __init__(self, name: str, path: str, color_space: str = None):
