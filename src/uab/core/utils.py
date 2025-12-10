@@ -1,11 +1,12 @@
 from datetime import datetime
-import cv2
 import numpy as np
 from io import BytesIO
 from pathlib import Path
 from PIL import Image
 import platform
 import re
+import OpenEXR
+import Imath
 
 
 def is_macos() -> bool:
@@ -97,12 +98,59 @@ def tags_from_file_name(file_path: Path) -> list[str]:
 
     tags = []
     file_name = file_path.stem.lower()
+    suffix = file_path.suffix.lower()
 
-    # Common resolution patterns (e.g., 1k, 2k, 4k, 8k, 16k)
-    resolution_pattern = r'\b(\d+)k\b'
-    resolution_match = re.search(resolution_pattern, file_name)
-    if resolution_match:
-        tags.append(f"{resolution_match.group(1)}K")
+    # Extract metadata from EXR file headers
+    if suffix == ".exr" and file_path.exists():
+        try:
+            exr_file = OpenEXR.InputFile(str(file_path))
+            header = exr_file.header()
+
+            # Extract resolution and add resolution tag
+            try:
+                dw = header["dataWindow"]
+                width = dw.max.x - dw.min.x + 1
+                height = dw.max.y - dw.min.y + 1
+                max_dim = max(width, height)
+                if max_dim >= 16384:
+                    tags.append("16K")
+                elif max_dim >= 8192:
+                    tags.append("8K")
+                elif max_dim >= 4096:
+                    tags.append("4K")
+                elif max_dim >= 2048:
+                    tags.append("2K")
+                elif max_dim >= 1024:
+                    tags.append("1K")
+            except (KeyError, AttributeError):
+                pass
+
+            try:
+                channels = header["channels"]
+                if channels:
+                    # Check pixel type of first channel
+                    first_channel = list(channels.values())[0]
+                    pixel_type = first_channel.type
+                    if pixel_type == Imath.PixelType(Imath.PixelType.HALF):
+                        tags.append("Half Float")
+                    elif pixel_type == Imath.PixelType(Imath.PixelType.FLOAT):
+                        tags.append("32-bit Float")
+                    elif pixel_type == Imath.PixelType(Imath.PixelType.UINT):
+                        tags.append("UINT")
+            except (KeyError, AttributeError, IndexError):
+                pass
+
+            exr_file.close()
+        except Exception:
+            # If EXR reading fails, fall back to filename parsing only
+            pass
+
+    # Common resolution patterns from filename (e.g., 1k, 2k, 4k, 8k, 16k)
+    if not any(tag.endswith("K") for tag in tags):
+        resolution_pattern = r'\b(\d+)k\b'
+        resolution_match = re.search(resolution_pattern, file_name)
+        if resolution_match:
+            tags.append(f"{resolution_match.group(1)}K")
 
     # Common time of day keywords
     time_keywords = {
@@ -150,19 +198,13 @@ def tags_from_file_name(file_path: Path) -> list[str]:
         if keyword in file_name:
             tags.append(tag)
 
-    # Projection type indicators
-    if 'latlong' in file_name or 'lat_long' in file_name:
-        tags.append('LatLong')
-    elif 'equirectangular' in file_name or 'equi' in file_name:
-        tags.append('Equirectangular')
-    elif 'cubemap' in file_name or 'cube' in file_name:
-        tags.append('Cubemap')
-
-    # Bit depth indicators (e.g., 16bit, 32bit, half, float)
-    bit_depth_pattern = r'\b(\d+)bit\b'
-    bit_depth_match = re.search(bit_depth_pattern, file_name)
-    if bit_depth_match:
-        tags.append(f"{bit_depth_match.group(1)}-bit")
+    # Bit depth indicators from filename (e.g., 16bit, 32bit, half, float)
+    # Only add if not already extracted from EXR header
+    if not any("bit" in tag or "Float" in tag for tag in tags):
+        bit_depth_pattern = r'\b(\d+)bit\b'
+        bit_depth_match = re.search(bit_depth_pattern, file_name)
+        if bit_depth_match:
+            tags.append(f"{bit_depth_match.group(1)}-bit")
 
     return tags
 
