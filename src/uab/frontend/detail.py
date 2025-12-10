@@ -7,7 +7,8 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QTextEdit, QPushButton, QScrollArea,
-    QFrame, QSizePolicy, QComboBox
+    QFrame, QSizePolicy, QComboBox, QListWidget,
+    QListWidgetItem, QInputDialog, QFileDialog, QMessageBox
 )
 
 from uab.core import utils
@@ -263,6 +264,68 @@ class Detail(QWidget):
         lod_layout.addWidget(self.lod_combo)
         content_layout.addLayout(lod_layout)
 
+        # Color space field (for Texture/HDRI assets)
+        color_space_layout = QVBoxLayout()
+        color_space_layout.setSpacing(5)
+        color_space_label = QLabel("Color Space")
+        color_space_label.setStyleSheet(
+            "font-weight: bold; font-size: 11pt; color: #999;")
+        self.color_space_display = QLabel()
+        self.color_space_display.setWordWrap(True)
+        self.color_space_display.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.color_space_display.setStyleSheet(
+            "color: #ccc; padding: 5px; font-size: 11pt;")
+
+        self.color_space_edit = QLineEdit()
+        self.color_space_edit.setVisible(False)
+        self.color_space_edit.setPlaceholderText("e.g., sRGB, Linear, ACES")
+        self.color_space_edit.setStyleSheet("padding: 5px; font-size: 11pt;")
+
+        color_space_layout.addWidget(color_space_label)
+        color_space_layout.addWidget(self.color_space_display)
+        color_space_layout.addWidget(self.color_space_edit)
+        content_layout.addLayout(color_space_layout)
+
+        # LOD editing section (only visible in edit mode for Texture assets)
+        self.lod_edit_container = QWidget()
+        lod_edit_layout = QVBoxLayout(self.lod_edit_container)
+        lod_edit_layout.setSpacing(5)
+        lod_edit_label = QLabel("Edit LODs")
+        lod_edit_label.setStyleSheet(
+            "font-weight: bold; font-size: 11pt; color: #999;")
+
+        # List widget to display LODs
+        self.lod_list_widget = QListWidget()
+        self.lod_list_widget.setVisible(False)
+        self.lod_list_widget.setStyleSheet("padding: 5px; font-size: 10pt;")
+        self.lod_list_widget.setMaximumHeight(150)
+
+        # Buttons for LOD management
+        lod_buttons_layout = QHBoxLayout()
+        lod_buttons_layout.setSpacing(5)
+
+        self.btn_add_lod = QPushButton("Add LOD")
+        self.btn_add_lod.setVisible(False)
+        self.btn_add_lod.setMaximumWidth(80)
+        self.btn_add_lod.clicked.connect(self._on_add_lod_clicked)
+
+        self.btn_remove_lod = QPushButton("Remove")
+        self.btn_remove_lod.setVisible(False)
+        self.btn_remove_lod.setMaximumWidth(80)
+        self.btn_remove_lod.clicked.connect(self._on_remove_lod_clicked)
+
+        lod_buttons_layout.addWidget(self.btn_add_lod)
+        lod_buttons_layout.addWidget(self.btn_remove_lod)
+        lod_buttons_layout.addStretch()
+
+        lod_edit_layout.addWidget(lod_edit_label)
+        lod_edit_layout.addWidget(self.lod_list_widget)
+        lod_edit_layout.addLayout(lod_buttons_layout)
+
+        content_layout.addWidget(self.lod_edit_container)
+        self.lod_edit_container.setVisible(False)
+
         content_layout.addStretch()
 
         scroll_area.setWidget(content_widget)
@@ -425,6 +488,17 @@ class Detail(QWidget):
         self.date_created_edit.setText(date_created.split('T')[
                                        0] if date_created else '')
 
+        # Display color space (for Texture/HDRI assets)
+        if isinstance(asset, Texture):
+            color_space = asset.color_space or 'Not specified'
+            self.color_space_display.setText(color_space)
+            self.color_space_edit.setText(asset.color_space or '')
+            self.color_space_display.setVisible(True)
+            self.color_space_edit.setVisible(False)
+        else:
+            self.color_space_display.setVisible(False)
+            self.color_space_edit.setVisible(False)
+
         if isinstance(asset, Texture):
             lod_info_parts = []
             if asset.current_lod:
@@ -466,9 +540,13 @@ class Detail(QWidget):
 
             self.lod_display.setText("\n".join(lod_info_parts))
             self.lod_display.setVisible(True)
+
+            # Populate LOD list widget for editing
+            self._populate_lod_list_widget(asset)
         else:
             self.lod_display.setVisible(False)
             self.lod_combo.setVisible(False)
+            self.lod_list_widget.clear()
 
     def edit_metadata(self, asset: Asset) -> None:
         """
@@ -500,6 +578,24 @@ class Detail(QWidget):
             self.date_created_edit.setText(date_created.split('T')[
                                            0] if date_created else '')
 
+        # Collect LOD data if this is a Texture asset
+        updated_lods = None
+        color_space_value = None
+        if isinstance(self.current_asset, Texture):
+            # Collect LODs from list widget
+            updated_lods = {}
+            for i in range(self.lod_list_widget.count()):
+                item = self.lod_list_widget.item(i)
+                lod_level = item.data(Qt.ItemDataRole.UserRole)
+                # Extract path from item text (format: "level: path")
+                item_text = item.text()
+                if ': ' in item_text:
+                    lod_path = item_text.split(': ', 1)[1]
+                    updated_lods[lod_level] = lod_path
+
+            # Get color space from edit field
+            color_space_value = self.color_space_edit.text().strip() or None
+
         updated_asset = AssetService.create_asset_request_body(
             asset_path=self.path_edit.text(),
             name=self.name_edit.text(),
@@ -507,19 +603,32 @@ class Detail(QWidget):
             tags=tags,
             author=self.author_edit.text(),
             date_created=self.date_created_edit.text(),
+            lods=updated_lods if updated_lods else None,
+            color_space=color_space_value,
         )
 
         # Preserve the asset's ID
         updated_asset.id = self.current_asset.id
 
-        # Preserve LOD data if the asset is a Texture
+        # Preserve current_lod if it still exists in updated LODs
         if isinstance(self.current_asset, Texture) and isinstance(updated_asset, Texture):
-            updated_asset.lods = self.current_asset.lods
-            updated_asset.current_lod = self.current_asset.current_lod
-            if hasattr(self.current_asset, 'color_space'):
-                updated_asset.color_space = self.current_asset.color_space
+            if self.current_asset.current_lod:
+                if updated_lods and self.current_asset.current_lod in updated_lods:
+                    updated_asset.current_lod = self.current_asset.current_lod
+                else:
+                    updated_asset.current_lod = None
 
         return updated_asset
+
+    def _populate_lod_list_widget(self, asset: Texture) -> None:
+        """Populate the LOD list widget with current LODs for editing."""
+        self.lod_list_widget.clear()
+        if asset.has_lods():
+            for lod_level, lod_path in sorted(asset.lods.items()):
+                item_text = f"{lod_level}: {lod_path}"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.ItemDataRole.UserRole, lod_level)
+                self.lod_list_widget.addItem(item)
 
     def _set_edit_mode(self, edit_mode: bool) -> None:
         """
@@ -548,6 +657,26 @@ class Detail(QWidget):
 
         self.date_created_display.setVisible(not edit_mode)
         self.date_created_edit.setVisible(edit_mode)
+
+        # Toggle color space visibility
+        if isinstance(self.current_asset, Texture):
+            self.color_space_display.setVisible(not edit_mode)
+            self.color_space_edit.setVisible(edit_mode)
+        else:
+            self.color_space_display.setVisible(False)
+            self.color_space_edit.setVisible(False)
+
+        # Toggle LOD editing widgets (only for Texture assets)
+        if isinstance(self.current_asset, Texture):
+            self.lod_edit_container.setVisible(edit_mode)
+            self.lod_list_widget.setVisible(edit_mode)
+            self.btn_add_lod.setVisible(edit_mode)
+            self.btn_remove_lod.setVisible(edit_mode)
+        else:
+            self.lod_edit_container.setVisible(False)
+            self.lod_list_widget.setVisible(False)
+            self.btn_add_lod.setVisible(False)
+            self.btn_remove_lod.setVisible(False)
 
         # Toggle button visibility
         self.btn_delete.setVisible(not edit_mode)
@@ -583,6 +712,9 @@ class Detail(QWidget):
         # Restore original values
         if self.current_asset:
             self.display_metadata(self.current_asset)
+            # Restore LOD list widget
+            if isinstance(self.current_asset, Texture):
+                self._populate_lod_list_widget(self.current_asset)
         self._set_edit_mode(False)
 
     def _on_lod_changed(self, text: str) -> None:
@@ -600,3 +732,67 @@ class Detail(QWidget):
             self.display_metadata(self.current_asset)
             # Emit save signal to persist the change
             self.save_clicked.emit(self.current_asset)
+
+    def _on_add_lod_clicked(self) -> None:
+        """Handle add LOD button click."""
+        if not self.current_asset or not isinstance(self.current_asset, Texture):
+            return
+
+        # Get LOD level from user
+        lod_level, ok = QInputDialog.getText(
+            self, "Add LOD", "Enter LOD level (e.g., 1k, 2k, 4k):"
+        )
+        if not ok or not lod_level.strip():
+            return
+
+        lod_level = lod_level.strip()
+
+        # Check if LOD level already exists
+        for i in range(self.lod_list_widget.count()):
+            item = self.lod_list_widget.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == lod_level:
+                QMessageBox.warning(
+                    self, "Duplicate LOD", f"LOD level '{lod_level}' already exists."
+                )
+                return
+
+        # Get file path from user
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            f"Select file for LOD '{lod_level}'",
+            "",
+            "HDRI Files (*.hdr *.exr);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        # Add to list widget
+        item_text = f"{lod_level}: {file_path}"
+        item = QListWidgetItem(item_text)
+        item.setData(Qt.ItemDataRole.UserRole, lod_level)
+        self.lod_list_widget.addItem(item)
+
+    def _on_remove_lod_clicked(self) -> None:
+        """Handle remove LOD button click."""
+        if not self.current_asset or not isinstance(self.current_asset, Texture):
+            return
+
+        current_item = self.lod_list_widget.currentItem()
+        if not current_item:
+            QMessageBox.information(
+                self, "No Selection", "Please select a LOD to remove."
+            )
+            return
+
+        lod_level = current_item.data(Qt.ItemDataRole.UserRole)
+        reply = QMessageBox.question(
+            self,
+            "Remove LOD",
+            f"Are you sure you want to remove LOD '{lod_level}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            row = self.lod_list_widget.row(current_item)
+            self.lod_list_widget.takeItem(row)
