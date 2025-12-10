@@ -9,7 +9,7 @@ import sys
 from PySide6.QtCore import Slot
 from uab.core.assets import Asset
 from uab.core.base_presenter import Presenter
-from uab.core.utils import get_modifier_key
+from uab.core.utils import get_alt_modifier_key, get_modifier_key
 
 
 class HoudiniPresenter(Presenter):
@@ -38,6 +38,7 @@ class HoudiniPresenter(Presenter):
     @Slot(object)
     def set_current_context_menu_options(self, context: object) -> List[dict]:
         modifier_key = get_modifier_key()
+        alt_modifier_key = get_alt_modifier_key()
 
         options = [
             {"label": "New Light", "callback": self.on_instantiate_requested,
@@ -55,7 +56,7 @@ class HoudiniPresenter(Presenter):
             set_texture_option = {
                 "label": "Update Light",
                 "callback": self._set_dome_light_texture,
-                "shortcut": f"{modifier_key}+LMB"
+                "shortcut": f"{alt_modifier_key}+LMB"
             }
             options.insert(0, set_texture_option)
         context["object"].create_context_menu_options(
@@ -66,7 +67,7 @@ class HoudiniPresenter(Presenter):
         nodes = hou.selectedNodes()
         return nodes[0] if nodes else None
 
-    def _get_currently_selected_nodes(self) -> List[hou.Node]:
+    def _get_currently_selected_nodes(self) -> List:
         nodes = hou.selectedNodes()
         return nodes if nodes else []
 

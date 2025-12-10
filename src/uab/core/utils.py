@@ -27,6 +27,15 @@ def get_modifier_key() -> str:
     return "Cmd" if is_macos() else "Ctrl"
 
 
+def get_alt_modifier_key() -> str:
+    """Get the appropriate alternate modifier key for keyboard shortcuts based on the OS.
+
+    Returns:
+        str: "Option" for macOS, "Alt" for Linux and Windows.
+    """
+    return "Opt" if is_macos() else "Alt"
+
+
 def hdri_to_pixmap_format(
     input_path: str | Path,
     gamma: float = 2.4,
