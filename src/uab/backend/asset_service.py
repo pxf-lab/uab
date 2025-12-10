@@ -47,6 +47,7 @@ class AssetService:
         """
         asset_class = self._detect_asset_type(data)
 
+        # TODO: refactor the constructor of @HDRI
         # For HDRI, manually construct to ensure file_type is set correctly
         if asset_class == HDRI:
             # HDRI inherits from Texture, so use Texture.from_dict approach
@@ -55,8 +56,6 @@ class AssetService:
                 name=data.get("name", ""),
                 path=data.get("path", ""),
                 color_space=data.get("color_space"),
-                lods=data.get("lods"),
-                current_lod=data.get("current_lod"),
             )
             # Set other Asset fields
             hdri.id = data.get("id")
@@ -66,6 +65,8 @@ class AssetService:
             hdri.author = data.get("author")
             hdri.date_created = data.get("date_created")
             hdri.date_added = data.get("date_added")
+            hdri.lods = data.get("lods")
+            hdri.current_lod = data.get("current_lod")
             return hdri
         elif asset_class == Texture:
             return Texture.from_dict(data)
