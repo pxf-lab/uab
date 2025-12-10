@@ -122,9 +122,44 @@ class Asset(ABC):
 
 
 class Texture(Asset):
-    def __init__(self, name: str, path: str, color_space: str = None):
+    def __init__(
+        self,
+        name: str,
+        path: str,
+        color_space: str = None,
+        lods: dict[str, str] | None = None,
+        current_lod: str | None = None,
+    ):
         super().__init__(name, path)
         self.color_space = color_space
+        self.lods = lods or {}
+        self.current_lod = current_lod
+
+    def add_lod(self, lod_level: str, lod_path: str) -> None:
+        """Add or update a LOD level for this texture.
+
+        Args:
+            lod_level (str): The LOD level identifier (e.g., "0", "1", "2" or "high", "medium", "low").
+            lod_path (str): The file path for this LOD level.
+        """
+        self.lods[lod_level] = lod_path
+
+    def remove_lod(self, lod_level: str) -> bool:
+        """Remove an LOD level from this texture.
+
+        Args:
+            lod_level (str): The LOD level identifier to remove.
+
+        Returns:
+            bool: True if the LOD was removed, False if it didn't exist.
+        """
+        if lod_level in self.lods:
+            del self.lods[lod_level]
+            # If we removed the current LOD, reset current_lod
+            if self.current_lod == lod_level:
+                self.current_lod = None
+            return True
+        return False
 
 
 class HDRI(Texture):
