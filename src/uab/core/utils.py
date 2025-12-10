@@ -87,72 +87,94 @@ def file_name_to_display_name(file_path: Path) -> str:
 
 
 def tags_from_file_name(file_path: Path) -> list[str]:
-    """Extract tags from a file name.
-
-    Args:
-        file_path (Path): The file path to extract tags from.
-
-    Returns:
-        list[str]: The tags.
-    """
-
+    """Extract tags from a file name."""
     tags = []
     file_name = file_path.stem.lower()
     suffix = file_path.suffix.lower()
 
-    # Extract metadata from EXR file headers
+    # EXR metadata tags
     if suffix == ".exr" and file_path.exists():
+        tags.extend(_exr_metadata_tags(file_path))
+
+    # Resolution tag from filename
+    if not any(tag.endswith("K") for tag in tags):
+        resolution_tag = _resolution_tag_from_filename(file_name)
+        if resolution_tag:
+            tags.append(resolution_tag)
+
+    # Time of day tag
+    time_tag = _time_of_day_tag_from_filename(file_name)
+    if time_tag:
+        tags.append(time_tag)
+
+    # Environment/weather tags
+    env_tags = _environment_tags_from_filename(file_name)
+    tags.extend(env_tags)
+
+    # Bit depth
+    if not any("bit" in tag or "Float" in tag for tag in tags):
+        bit_tag = _bit_depth_tag_from_filename(file_name)
+        if bit_tag:
+            tags.append(bit_tag)
+
+    return tags
+
+
+def _exr_metadata_tags(file_path: Path) -> list[str]:
+    tags = []
+    try:
+        exr_file = OpenEXR.InputFile(str(file_path))
+        header = exr_file.header()
+
+        # Resolution tag
         try:
-            exr_file = OpenEXR.InputFile(str(file_path))
-            header = exr_file.header()
-
-            # Extract resolution and add resolution tag
-            try:
-                dw = header["dataWindow"]
-                width = dw.max.x - dw.min.x + 1
-                height = dw.max.y - dw.min.y + 1
-                max_dim = max(width, height)
-                if max_dim >= 16384:
-                    tags.append("16K")
-                elif max_dim >= 8192:
-                    tags.append("8K")
-                elif max_dim >= 4096:
-                    tags.append("4K")
-                elif max_dim >= 2048:
-                    tags.append("2K")
-                elif max_dim >= 1024:
-                    tags.append("1K")
-            except (KeyError, AttributeError):
-                pass
-
-            try:
-                channels = header["channels"]
-                if channels:
-                    # Check pixel type of first channel
-                    first_channel = list(channels.values())[0]
-                    pixel_type = first_channel.type
-                    if pixel_type == Imath.PixelType(Imath.PixelType.HALF):
-                        tags.append("Half Float")
-                    elif pixel_type == Imath.PixelType(Imath.PixelType.FLOAT):
-                        tags.append("32-bit Float")
-                    elif pixel_type == Imath.PixelType(Imath.PixelType.UINT):
-                        tags.append("UINT")
-            except (KeyError, AttributeError, IndexError):
-                pass
-
-            exr_file.close()
-        except Exception:
-            # If EXR reading fails, fall back to filename parsing only
+            dw = header["dataWindow"]
+            width = dw.max.x - dw.min.x + 1
+            height = dw.max.y - dw.min.y + 1
+            max_dim = max(width, height)
+            if max_dim >= 16384:
+                tags.append("16K")
+            elif max_dim >= 8192:
+                tags.append("8K")
+            elif max_dim >= 4096:
+                tags.append("4K")
+            elif max_dim >= 2048:
+                tags.append("2K")
+            elif max_dim >= 1024:
+                tags.append("1K")
+        except (KeyError, AttributeError):
             pass
 
-    # Common resolution patterns from filename (e.g., 1k, 2k, 4k, 8k, 16k)
-    if not any(tag.endswith("K") for tag in tags):
-        resolution_pattern = r'\b(\d+)k\b'
-        resolution_match = re.search(resolution_pattern, file_name)
-        if resolution_match:
-            tags.append(f"{resolution_match.group(1)}K")
+        # Pixel type tag
+        try:
+            channels = header["channels"]
+            if channels:
+                first_channel = list(channels.values())[0]
+                pixel_type = first_channel.type
+                if pixel_type == Imath.PixelType(Imath.PixelType.HALF):
+                    tags.append("Half Float")
+                elif pixel_type == Imath.PixelType(Imath.PixelType.FLOAT):
+                    tags.append("32-bit Float")
+                elif pixel_type == Imath.PixelType(Imath.PixelType.UINT):
+                    tags.append("UINT")
+        except (KeyError, AttributeError, IndexError):
+            pass
 
-    # Common time of day keywords
+        exr_file.close()
+    except Exception:
+        pass
+    return tags
+
+
+def _resolution_tag_from_filename(file_name: str) -> str | None:
+    resolution_pattern = r'\b(\d+)k\b'
+    resolution_match = re.search(resolution_pattern, file_name)
+    if resolution_match:
+        return f"{resolution_match.group(1)}K"
+    return None
+
+
+def _time_of_day_tag_from_filename(file_name: str) -> str | None:
     time_keywords = {
         'day': 'Day',
         'night': 'Night',
@@ -168,10 +190,11 @@ def tags_from_file_name(file_path: Path) -> list[str]:
     }
     for keyword, tag in time_keywords.items():
         if keyword in file_name:
-            tags.append(tag)
-            break  # Only add one time tag
+            return tag
+    return None
 
-    # Common environment/weather keywords
+
+def _environment_tags_from_filename(file_name: str) -> list[str]:
     environment_keywords = {
         'outdoor': 'Outdoor',
         'indoor': 'Indoor',
@@ -194,19 +217,19 @@ def tags_from_file_name(file_path: Path) -> list[str]:
         'lake': 'Lake',
         'ocean': 'Ocean',
     }
+    tags = []
     for keyword, tag in environment_keywords.items():
         if keyword in file_name:
             tags.append(tag)
-
-    # Bit depth indicators from filename (e.g., 16bit, 32bit, half, float)
-    # Only add if not already extracted from EXR header
-    if not any("bit" in tag or "Float" in tag for tag in tags):
-        bit_depth_pattern = r'\b(\d+)bit\b'
-        bit_depth_match = re.search(bit_depth_pattern, file_name)
-        if bit_depth_match:
-            tags.append(f"{bit_depth_match.group(1)}-bit")
-
     return tags
+
+
+def _bit_depth_tag_from_filename(file_name: str) -> str | None:
+    bit_depth_pattern = r'\b(\d+)bit\b'
+    bit_depth_match = re.search(bit_depth_pattern, file_name)
+    if bit_depth_match:
+        return f"{bit_depth_match.group(1)}-bit"
+    return None
 
 
 def is_valid_date(date: str) -> str:
