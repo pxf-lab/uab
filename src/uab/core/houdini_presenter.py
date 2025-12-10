@@ -63,20 +63,28 @@ class HoudiniPresenter(Presenter):
             options, context["position"])
         return options
 
-    def _get_currently_selected_node(self):
+    def _get_first_selected_node(self):
         nodes = hou.selectedNodes()
         return nodes[0] if nodes else None
 
+    def _get_currently_selected_nodes(self) -> List[hou.Node]:
+        nodes = hou.selectedNodes()
+        return nodes if nodes else []
+
     def _is_dome_light_currently_selected(self) -> bool:
-        current_node = self._get_currently_selected_node()
-        if not current_node:
-            return False
-        return current_node.type().name() == "domelight::3.0"
+        nodes = self._get_currently_selected_nodes()
+        for node in nodes:
+            if node.type().name() == "domelight::3.0":
+                return True
+        return False
 
     def _set_dome_light_texture(self, asset: Asset):
-        light = self._get_currently_selected_node()
-        if not light:
-            return
-        tex = light.parm("xn__inputstexturefile_r3ah")
-        tex.set(asset.path)
-        return light
+        nodes = self._get_currently_selected_nodes()
+        lights = []
+        for node in nodes:
+            if node.type().name() != "domelight::3.0":
+                continue
+            tex = node.parm("xn__inputstexturefile_r3ah")
+            tex.set(asset.path)
+            lights.append(node)
+        return lights
