@@ -104,13 +104,13 @@ class Presenter(QObject):
 
     def on_delete_asset(self, asset: Asset):
         if asset.id is None:
-            print("Error: Cannot delete asset without id")
+            print("Error: Cannot remove asset without id")
             return
         self.asset_service.remove_asset_from_db(asset.id)
         self._refresh_browser()
         self.widget.show_browser()
         self.widget.show_message(
-            f"Deleted asset: {asset.name}", "info", 3000)
+            f"Removed asset: {asset.name}", "info", 3000)
 
     def on_renderer_changed(self, renderer_text: str):
         self.widget.show_message(
