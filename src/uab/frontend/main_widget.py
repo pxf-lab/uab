@@ -27,7 +27,7 @@ class MainWidget(QWidget):
     renderer_changed = Signal(str)
     import_clicked = Signal(str)
     back_clicked = Signal()
-    delete_asset_clicked = Signal(int)
+    delete_asset_clicked = Signal(object)
     widget_closed = Signal()
     save_metadata_changes_clicked = Signal(object)  # Emits Asset object
 
@@ -123,8 +123,8 @@ class MainWidget(QWidget):
     def _on_import_clicked(self, asset_path: str) -> None:
         self.import_clicked.emit(asset_path)
 
-    def _on_delete_asset_clicked(self, asset_id: int) -> None:
-        self.delete_asset_clicked.emit(asset_id)
+    def _on_delete_asset_clicked(self, asset: Asset) -> None:
+        self.delete_asset_clicked.emit(asset)
 
     def set_current_asset(self, asset: Asset) -> None:
         self.current_asset = asset

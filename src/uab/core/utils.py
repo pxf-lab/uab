@@ -93,7 +93,8 @@ def tags_from_file_name(file_path: Path) -> list[str]:
     Returns:
         list[str]: The tags.
     """
-    return [file_path.suffix]
+    # TODO: consider what data can be extracted from file name and/or file metadata
+    pass
 
 
 def is_valid_date(date: str) -> str:

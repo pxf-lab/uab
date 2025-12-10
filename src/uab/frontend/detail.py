@@ -29,7 +29,7 @@ class Detail(QWidget):
 
     back_clicked = Signal()
     save_clicked = Signal(object)  # Emits Asset object
-    delete_clicked = Signal(int)
+    delete_clicked = Signal(object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -388,8 +388,10 @@ class Detail(QWidget):
 
         # Display date created
         date_created = asset.date_created or 'Unknown'
-        self.date_created_display.setText(date_created.split('T')[0] if date_created else 'Unknown')
-        self.date_created_edit.setText(date_created.split('T')[0] if date_created else '')
+        self.date_created_display.setText(
+            date_created.split('T')[0] if date_created else 'Unknown')
+        self.date_created_edit.setText(date_created.split('T')[
+                                       0] if date_created else '')
 
     def edit_metadata(self, asset: Asset) -> None:
         """
@@ -418,7 +420,8 @@ class Detail(QWidget):
 
         if not utils.is_valid_date(self.date_created_edit.text()):
             date_created = self.current_asset.date_created or ''
-            self.date_created_edit.setText(date_created.split('T')[0] if date_created else '')
+            self.date_created_edit.setText(date_created.split('T')[
+                                           0] if date_created else '')
 
         updated_asset = AssetService.create_asset_request_body(
             asset_path=self.path_edit.text(),
@@ -473,8 +476,7 @@ class Detail(QWidget):
         self.back_clicked.emit()
 
     def _on_delete_clicked(self) -> None:
-        asset_id = self.current_asset.id if self.current_asset and self.current_asset.id is not None else -1
-        self.delete_clicked.emit(asset_id)
+        self.delete_clicked.emit(self.current_asset)
 
     def _on_edit_clicked(self) -> None:
         """Handle edit button click."""
