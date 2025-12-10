@@ -161,6 +161,53 @@ class Texture(Asset):
             return True
         return False
 
+    def get_lod_path(self, lod_level: str | None = None) -> str | None:
+        """Get the file path for a specific LOD level.
+
+        Args:
+            lod_level (str | None): The LOD level identifier. If None, returns the current LOD path
+                                   or falls back to the base path.
+
+        Returns:
+            str | None: The file path for the requested LOD level, or None if not found.
+        """
+        if lod_level is None:
+            lod_level = self.current_lod
+
+        if lod_level and lod_level in self.lods:
+            return self.lods[lod_level]
+
+        # Fall back to base path if no LOD is specified or found
+        return self.path if lod_level is None else None
+
+    def set_current_lod(self, lod_level: str | None) -> bool:
+        """Set the current active LOD level.
+
+        Args:
+            lod_level (str | None): The LOD level identifier to set as current, or None to use base path.
+
+        Returns:
+            bool: True if the LOD level was set successfully, False if the LOD doesn't exist.
+        """
+        if lod_level is None:
+            self.current_lod = None
+            return True
+
+        if lod_level in self.lods:
+            self.current_lod = lod_level
+            return True
+
+        return False
+
+    def get_current_path(self) -> str:
+        """Get the currently active path (LOD path if set, otherwise base path).
+
+        Returns:
+            str: The file path to use for the current LOD or base path.
+        """
+        lod_path = self.get_lod_path()
+        return lod_path if lod_path is not None else self.path
+
 
 class HDRI(Texture):
     def __init__(self, name: str, path: str, color_space: str = None):
