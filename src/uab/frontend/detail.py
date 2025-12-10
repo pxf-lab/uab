@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core import utils
-from uab.core.assets import Asset
+from uab.core.assets import Asset, Texture, HDRI
 from uab.backend.asset_service import AssetService
 
 
@@ -235,6 +235,26 @@ class Detail(QWidget):
         tags_layout.addWidget(self.tags_edit)
         content_layout.addLayout(tags_layout)
 
+        sep_tags_lod = QFrame()
+        sep_tags_lod.setFrameShape(QFrame.Shape.HLine)
+        sep_tags_lod.setStyleSheet("color: #333;")
+        content_layout.addWidget(sep_tags_lod)
+
+        lod_layout = QVBoxLayout()
+        lod_layout.setSpacing(5)
+        lod_label = QLabel("Level of Detail (LOD)")
+        lod_label.setStyleSheet(
+            "font-weight: bold; font-size: 11pt; color: #999;")
+        self.lod_display = QLabel()
+        self.lod_display.setWordWrap(True)
+        self.lod_display.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.lod_display.setStyleSheet(
+            "color: #ccc; padding: 5px; font-size: 11pt;")
+        lod_layout.addWidget(lod_label)
+        lod_layout.addWidget(self.lod_display)
+        content_layout.addLayout(lod_layout)
+
         content_layout.addStretch()
 
         scroll_area.setWidget(content_widget)
@@ -327,7 +347,11 @@ class Detail(QWidget):
 
         # TODO: @thumbnail.py has a method that does exactly the same thing.
         pixmap = QPixmap()
-        path = Path(asset.path or '')
+        if isinstance(asset, Texture):
+            asset_path = asset.get_current_path()
+        else:
+            asset_path = asset.path or ''
+        path = Path(asset_path)
         if path and path.exists():
             try:
                 byte_image = utils.hdri_to_pixmap_format(
@@ -392,6 +416,29 @@ class Detail(QWidget):
             date_created.split('T')[0] if date_created else 'Unknown')
         self.date_created_edit.setText(date_created.split('T')[
                                        0] if date_created else '')
+
+        if isinstance(asset, Texture):
+            lod_info_parts = []
+            if asset.current_lod:
+                lod_info_parts.append(f"Current: {asset.current_lod}")
+            else:
+                lod_info_parts.append("Current: Base (no LOD)")
+
+            if asset.has_lods():
+                lod_list = []
+                for lod_level, lod_path in sorted(asset.lods.items()):
+                    lod_name = Path(lod_path).name if lod_path else lod_level
+                    marker = "✓" if lod_level == asset.current_lod else " "
+                    lod_list.append(f"  {marker} {lod_level}: {lod_name}")
+                lod_info_parts.append("\nAvailable LODs:")
+                lod_info_parts.extend(lod_list)
+            else:
+                lod_info_parts.append("No LODs defined")
+
+            self.lod_display.setText("\n".join(lod_info_parts))
+            self.lod_display.setVisible(True)
+        else:
+            self.lod_display.setVisible(False)
 
     def edit_metadata(self, asset: Asset) -> None:
         """
