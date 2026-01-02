@@ -1,9 +1,11 @@
 from __future__ import annotations
+import asyncio
 from abc import abstractmethod
-from typing import List, Set, Type, Optional, final
+from typing import Dict, List, Set, Type, Optional, final
 from weakref import WeakValueDictionary
 import uuid
 
+from uab.core.assets import Asset
 from uab.core.plugins.base_plugin import BasePlugin
 
 
@@ -54,3 +56,70 @@ class AssetLibraryPlugin(BasePlugin):
             p for p in all_plugins
             if issubclass(p, cls) and p is not cls
         }
+
+    @classmethod
+    async def fetch_all_assets_async(cls) -> Dict[str, List[Asset]]:
+        """
+        Fetch assets from all registered plugin instances.
+
+        Returns:
+            Dict mapping instance_id to list of assets from that plugin.
+        """
+        instances = cls.get_all_instances()
+        if not instances:
+            return {}
+
+        tasks = [inst.fetch_assets_async() for inst in instances]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        output: Dict[str, List[Asset]] = {}
+        for inst, result in zip(instances, results):
+            if isinstance(result, Exception):
+                # Log or handle error; return empty list for this plugin
+                output[inst._instance_id] = []
+            else:
+                output[inst._instance_id] = result
+
+        return output
+
+    @classmethod
+    async def search_all_async(cls, query: str) -> Dict[str, List[Asset]]:
+        """
+        Search across all registered plugin instances.
+
+        Args:
+            query: Search query string.
+
+        Returns:
+            Dict mapping instance_id to list of matching assets from that plugin.
+        """
+        instances = cls.get_all_instances()
+        if not instances:
+            return {}
+
+        tasks = [inst.search_assets_async(query) for inst in instances]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        output: Dict[str, List[Asset]] = {}
+        for inst, result in zip(instances, results):
+            if isinstance(result, Exception):
+                output[inst._instance_id] = []
+            else:
+                output[inst._instance_id] = result
+
+        return output
+
+    @abstractmethod
+    async def fetch_assets_async(self) -> List[Asset]:
+        """Fetch all assets from this library."""
+        pass
+
+    @abstractmethod
+    async def search_assets_async(self, query: str) -> List[Asset]:
+        """Search assets in this library matching the query."""
+        pass
+
+    @abstractmethod
+    async def get_asset_by_id_async(self, asset_id: str) -> Optional[Asset]:
+        """Get a single asset by its ID."""
+        pass
