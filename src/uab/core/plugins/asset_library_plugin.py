@@ -33,3 +33,24 @@ class AssetLibraryPlugin(BasePlugin):
         instance_id is generated.
         """
         pass
+
+    @classmethod
+    def get_all_instances(cls) -> List[AssetLibraryPlugin]:
+        return list(cls._instances.values())
+
+    @classmethod
+    def get_by_id(cls, instance_id: str) -> Optional[AssetLibraryPlugin]:
+        return cls._instances.get(instance_id)
+
+    @classmethod
+    def get_registered_libraries(cls) -> Set[Type[AssetLibraryPlugin]]:
+        """
+        Dynamically filters the master list for Asset Libraries only.
+        """
+        all_plugins = BasePlugin.get_plugin_types()
+
+        # Filter for subclasses of this class
+        return {
+            p for p in all_plugins
+            if issubclass(p, cls) and p is not cls
+        }
