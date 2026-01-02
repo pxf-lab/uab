@@ -9,18 +9,18 @@ class BasePlugin(ABC):
     automatically registers concrete subclasses via __init_subclass__.
     """
 
-    _plugin_types: Set[Type[BasePlugin]] = set()
+    _registry: Set[Type[BasePlugin]] = set()
 
     def __init_subclass__(cls, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
 
         # Only register non abstract classes
         if not getattr(cls, "__abstractmethods__", None):
-            cls._plugin_types.add(cls)
+            cls._registry.add(cls)
 
     @classmethod
     def get_plugin_types(cls) -> Set[Type[BasePlugin]]:
-        return cls._plugin_types.copy()
+        return cls._registry.copy()
 
     @property
     @abstractmethod
