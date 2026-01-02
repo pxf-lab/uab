@@ -123,3 +123,43 @@ class AssetLibraryPlugin(BasePlugin):
     async def get_asset_by_id_async(self, asset_id: str) -> Optional[Asset]:
         """Get a single asset by its ID."""
         pass
+
+    @property
+    def can_import(self) -> bool:
+        """Whether this plugin supports importing assets into the library."""
+        return False
+
+    @property
+    def can_download(self) -> bool:
+        """Whether this plugin supports downloading assets."""
+        return False
+
+    @property
+    def can_remove(self) -> bool:
+        """Whether this plugin supports removing assets from the library."""
+        return False
+
+    @property
+    def can_edit_metadata(self) -> bool:
+        """Whether this plugin supports editing asset metadata."""
+        return False
+
+    async def import_asset_async(self, asset: Asset) -> Optional[Asset]:
+        """Import or download an asset. Override if can_import() returns True."""
+        raise NotImplementedError(
+            f"{self.name} does not support importing assets")
+
+    async def download_asset_async(self, asset: Asset) -> Optional[Asset]:
+        """Download an asset. Override if can_download() returns True."""
+        raise NotImplementedError(
+            f"{self.name} does not support downloading assets")
+
+    async def remove_asset_async(self, asset: Asset) -> None:
+        """Remove an asset from the library. Override if can_remove() returns True."""
+        raise NotImplementedError(
+            f"{self.name} does not support removing assets")
+
+    async def edit_metadata_async(self, asset: Asset) -> Optional[Asset]:
+        """Edit asset metadata. Override if can_edit_metadata() returns True."""
+        raise NotImplementedError(
+            f"{self.name} does not support editing metadata")
