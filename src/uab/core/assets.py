@@ -214,7 +214,7 @@ class Texture(Asset):
         Returns:
             bool: True if LODs are defined, False otherwise.
         """
-        return len(self.lods) > 0
+        return self.lods is not None and len(self.lods) > 0
 
     def to_dict(self) -> dict:
         """Convert this Texture into a serializable dictionary.
@@ -267,9 +267,10 @@ class Texture(Asset):
 
 class HDRI(Texture):
     def __init__(self, name: str, path: str, color_space: str = None):
+        # TODO: refactor this constructor with other necessary fields
         super().__init__(name, path, color_space)
         # remove the dot from the file type
-        self.file_type = super().path.suffix.upper()[1:]
+        self.file_type = Path(self.path).suffix.upper()[1:]
 
     @staticmethod
     def _load_hdr(input_path: Path) -> np.ndarray:

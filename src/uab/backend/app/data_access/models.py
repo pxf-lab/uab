@@ -15,6 +15,9 @@ class Asset(Base):
     author = Column(String, nullable=True)
     date_created = Column(String, nullable=True)
     date_added = Column(String, nullable=True)
+    lods = Column(JSON, nullable=True)
+    current_lod = Column(String, nullable=True)
+    color_space = Column(String, nullable=True)
 
     def __repr__(self):
         return f"<Asset(id={self.id}, name='{self.name}')>"

@@ -1,7 +1,7 @@
 """Pydantic models for API request/response."""
 
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class AssetBase(BaseModel):
@@ -13,6 +13,9 @@ class AssetBase(BaseModel):
     author: Optional[str] = None
     date_created: Optional[str] = None
     date_added: Optional[str] = None
+    lods: Optional[Dict[str, str]] = None
+    current_lod: Optional[str] = None
+    color_space: Optional[str] = None
 
 
 class AssetCreate(AssetBase):
@@ -30,6 +33,9 @@ class AssetUpdate(BaseModel):
     author: Optional[str] = None
     date_created: Optional[str] = None
     date_added: Optional[str] = None
+    lods: Optional[Dict[str, str]] = None
+    current_lod: Optional[str] = None
+    color_space: Optional[str] = None
 
 
 class AssetResponse(AssetBase):
