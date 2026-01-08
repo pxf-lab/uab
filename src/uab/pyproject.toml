@@ -5,12 +5,5 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi",
-    "opencv-python",
-    "openexr>=3.4.3",
-    "pillow",
-    "pyside6",
-    "requests",
-    "sqlalchemy",
-    "uvicorn",
+    "pyside6>=6.10.1",
 ]
