@@ -52,7 +52,7 @@ class StandardAsset:
     type: AssetType
     status: AssetStatus
     local_path: Path | None = None
-    thumbnail_url: str = ""
+    thumbnail_url: str = "" | None
     thumbnail_path: Path | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
