@@ -70,3 +70,38 @@ class StandardAsset:
             self.status = AssetStatus(self.status)
 
         self.id = f"{self.source}-{self.name}-{str(uuid4())}"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization (e.g., database storage)."""
+        return {
+            "id": self.id,
+            "source": self.source,
+            "external_id": self.external_id,
+            "name": self.name,
+            "type": self.type.value,
+            "status": self.status.value,
+            "local_path": str(self.local_path) if self.local_path else None,
+            "thumbnail_url": self.thumbnail_url,
+            "thumbnail_path": str(self.thumbnail_path) if self.thumbnail_path else None,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StandardAsset":
+        """Create instance from dictionary (e.g., database retrieval)."""
+        # Extract paths before creating instance
+        local_path = data.get("local_path")
+        thumbnail_path = data.get("thumbnail_path")
+
+        return cls(
+            id=data.get("id", str(uuid4())),
+            source=data.get("source", ""),
+            external_id=data.get("external_id", ""),
+            name=data.get("name", ""),
+            type=AssetType(data.get("type", AssetType.TEXTURE.value)),
+            status=AssetStatus(data.get("status", AssetStatus.CLOUD.value)),
+            local_path=Path(local_path) if local_path else None,
+            thumbnail_url=data.get("thumbnail_url", ""),
+            thumbnail_path=Path(thumbnail_path) if thumbnail_path else None,
+            metadata=data.get("metadata", {}),
+        )
