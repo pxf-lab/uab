@@ -69,3 +69,31 @@ class AssetDatabase:
                     "INSERT INTO schema_version (version) VALUES (?)",
                     (SCHEMA_VERSION,),
                 )
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """Create a database connection with WAL mode and busy timeout."""
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=5.0,
+            isolation_level=None,  # autocommit for WAL
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @contextmanager
+    def _write_lock(self) -> Iterator[None]:
+        """Acquire exclusive file lock for write operations."""
+        # TODO: Support Windows with msvcrt.locking()
+        self._lock_path.touch(exist_ok=True)
+        with open(self._lock_path, "r") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
