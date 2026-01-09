@@ -217,3 +217,64 @@ class HostIntegration(ABC):
             Renderer identifier (e.g., "arnold", "redshift", "karma")
         """
         ...
+
+
+class RenderStrategy(ABC):
+    """
+    Abstract base class for renderer-specific asset operations.
+    """
+
+    @abstractmethod
+    def create_environment_light(self, asset: StandardAsset, options: dict[str, Any]) -> Any:
+        """
+        Create an environment light from the asset.
+
+        Args:
+            asset: The asset to create environment light from
+            options: Environment light creation options
+
+        Returns:
+            The created environment light node/network/etc (type depends on host)
+        """
+        ...
+
+    @abstractmethod
+    def update_environment_light(self, asset: StandardAsset, options: dict[str, Any]) -> None:
+        """
+        Update an environment light from the asset.
+
+        Args:
+            asset: The asset to update environment light from
+            options: Environment light update options
+
+        Returns:
+            The updated environment light node/network/etc (type depends on host)
+        """
+        ...
+
+    @abstractmethod
+    def create_material(
+        self, asset: StandardAsset, options: dict[str, Any]
+    ) -> Any:
+        """
+        Create a material from the asset in the host application.
+
+        Args:
+            asset: The asset to create material from
+            options: Material creation options
+
+        Returns:
+            The created material node/network/etc (type depends on host)
+        """
+        ...
+
+    @abstractmethod
+    def update_material(self, asset: StandardAsset, options: dict[str, Any]) -> None:
+        """
+        Update a material from the asset.
+
+        Args:
+            asset: The asset to update material from
+            options: Material update options
+        """
+        ...
