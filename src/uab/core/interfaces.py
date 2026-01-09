@@ -153,3 +153,67 @@ class AssetLibraryPlugin(Plugin, ABC):
             }
         """
         return None
+
+
+class HostIntegration(ABC):
+    """
+    Abstract base class for DCC host integrations.
+
+    Handles importing assets into the host application (Houdini, Maya, etc.)
+    and manages renderer detection and material creation.
+    """
+
+    @property
+    @abstractmethod
+    def uab_supported_renderers(self) -> list[str]:
+        """
+        Return a list of renderers that are supported by UAB.
+
+        Returns:
+            List of renderer identifiers (e.g., "arnold", "redshift", "karma")
+        """
+        ...
+
+    @abstractmethod
+    def import_asset(self, asset: StandardAsset, options: dict[str, Any]) -> None:
+        """
+        Import an asset into the host application's scene. Delegates to the appropriate
+        renderer strategy.
+
+        Wrap operations in an undo group where supported.
+
+        Args:
+            asset: The asset to import (must have local_path set)
+            options: Import options from settings dialog
+        """
+        ...
+
+    @abstractmethod
+    def update_selection(self, asset: StandardAsset) -> None:
+        """
+        Where supported, update the selection in the host application. Delegates
+        to the appropriate renderer strategy.
+
+        Ex. in Houdini, update the selected node with the new asset.
+        """
+        ...
+
+    @abstractmethod
+    def get_host_available_renderers(self) -> list[str]:
+        """
+        Return a list of renderers that are available in the host application.
+
+        Returns:
+            List of renderer identifiers (e.g., "arnold", "redshift", "karma")
+        """
+        ...
+
+    @abstractmethod
+    def get_active_renderer(self) -> str:
+        """
+        Detect and return the active renderer.
+
+        Returns:
+            Renderer identifier (e.g., "arnold", "redshift", "karma")
+        """
+        ...
