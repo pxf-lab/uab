@@ -97,3 +97,24 @@ class AssetDatabase:
                 yield
             finally:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def _row_to_asset(self, row: sqlite3.Row) -> StandardAsset:
+        """Convert a database row to a StandardAsset."""
+        metadata = row["metadata"]
+        if metadata:
+            metadata = json.loads(metadata)
+        else:
+            metadata = {}
+
+        return StandardAsset.from_dict({
+            "id": row["id"],
+            "source": row["source"],
+            "external_id": row["external_id"],
+            "name": row["name"],
+            "type": row["type"],
+            "status": row["status"],
+            "local_path": row["local_path"],
+            "thumbnail_url": row["thumbnail_url"],
+            "thumbnail_path": row["thumbnail_path"],
+            "metadata": metadata,
+        })
