@@ -50,3 +50,106 @@ class Plugin:
     def reset_types(cls) -> None:
         """Clear registry (for testing)."""
         cls._plugin_types.clear()
+
+
+class AssetLibraryPlugin(Plugin, ABC):
+    """
+    Abstract base class for asset library plugins.
+
+    Plugins provide access to asset sources (local files, remote sources, etc.)
+    and handle searching, downloading, and asset management.
+
+    Concrete subclasses auto-register via __init_subclass__ into this
+    class's own registry, accessible via the getters.
+    """
+
+    # Registry for all concrete implementations of this plugin type
+    _implementations: dict[str, type["AssetLibraryPlugin"]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Auto-register concrete plugin subclasses."""
+        super().__init_subclass__(**kwargs)
+        # Only register concrete classes with a plugin_id
+        if cls.plugin_id:
+            AssetLibraryPlugin._implementations[cls.plugin_id] = cls
+
+    @classmethod
+    def get_all(cls) -> dict[str, type["AssetLibraryPlugin"]]:
+        """Return dict of plugin_id → plugin class."""
+        return cls._implementations.copy()
+
+    @classmethod
+    def get(cls, plugin_id: str) -> type["AssetLibraryPlugin"] | None:
+        """Get a specific plugin class by ID."""
+        return cls._implementations.get(plugin_id)
+
+    @classmethod
+    def reset_registry(cls) -> None:
+        """Clear registry (for testing)."""
+        cls._implementations.clear()
+
+    @abstractmethod
+    async def search(self, query: str) -> list[StandardAsset]:
+        """
+        Search for assets matching the query.
+
+        Args:
+            query: Search string (empty string returns all/default assets)
+
+        Returns:
+            List of matching StandardAsset objects
+        """
+        ...
+
+    @abstractmethod
+    async def download(
+        self, asset: StandardAsset, resolution: str | None = None
+    ) -> StandardAsset:
+        """
+        Download a cloud asset to local storage.
+
+        Args:
+            asset: The asset to download
+            resolution: Optional resolution preference (e.g., "1k", "2k", "4k")
+
+        Returns:
+            Updated StandardAsset with local_path and status=LOCAL
+
+        Raises:
+            NotImplementedError: If plugin doesn't support downloads
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def can_download(self) -> bool:
+        """True if this plugin supports downloading assets."""
+        ...
+
+    @property
+    @abstractmethod
+    def can_remove(self) -> bool:
+        """True if this plugin supports removing assets."""
+        ...
+
+    def get_settings_schema(self, asset: StandardAsset) -> dict[str, Any] | None:
+        """
+        Return options schema for import settings dialog.
+
+        Override to provide asset-specific import options.
+
+        Args:
+            asset: The asset being imported
+
+        Returns:
+            Schema dict or None if no settings needed.
+            Schema format:
+            {
+                "field_name": {
+                    "type": "choice" | "text" | "bool",
+                    "options": [...],  # for choice type
+                    "default": value
+                }
+            }
+        """
+        return None
