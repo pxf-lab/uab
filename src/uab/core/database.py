@@ -119,7 +119,7 @@ class AssetDatabase:
             "metadata": metadata,
         })
 
-    def get_already_downloaded_ids_compared_to_external_ids(self, source: str, external_ids: list[str]) -> set[str]:
+    def get_already_downloaded_ids_compared_to_external_source(self, source: str, external_ids: list[str]) -> set[str]:
         """
         Batch lookup for comparing local database with external source.
 
@@ -185,3 +185,44 @@ class AssetDatabase:
                     json.dumps(asset.metadata) if asset.metadata else None,
                 ),
             )
+
+    def get_asset_by_external_id(self, source: str, external_id: str) -> StandardAsset | None:
+        """
+        Get a single asset by source and external_id.
+
+        Args:
+            source: Plugin ID (e.g., "polyhaven")
+            external_id: External ID from source
+
+        Returns:
+            The asset if found, None otherwise
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM assets WHERE source = ? AND external_id = ?",
+                (source, external_id),
+            )
+            row = cursor.fetchone()
+            if row:
+                return self._row_to_asset(row)
+            return None
+
+    def get_asset_by_id(self, asset_id: str) -> StandardAsset | None:
+        """
+        Get a single asset by its internal ID.
+
+        Args:
+            asset_id: Internal asset ID
+
+        Returns:
+            The asset if found, None otherwise
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM assets WHERE id = ?",
+                (asset_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return self._row_to_asset(row)
+            return None
