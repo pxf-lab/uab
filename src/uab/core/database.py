@@ -226,3 +226,43 @@ class AssetDatabase:
             if row:
                 return self._row_to_asset(row)
             return None
+
+    def get_local_assets(self, source: str | None = None) -> list[StandardAsset]:
+        """
+        Query assets with LOCAL status.
+
+        Args:
+            source: Optional plugin ID to filter by
+
+        Returns:
+            List of local assets
+        """
+        with self._connect() as conn:
+            if source:
+                cursor = conn.execute(
+                    "SELECT * FROM assets WHERE status = ? AND source = ?",
+                    (AssetStatus.LOCAL.value, source),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM assets WHERE status = ?",
+                    (AssetStatus.LOCAL.value,),
+                )
+            return [self._row_to_asset(row) for row in cursor]
+
+    def get_assets_by_source(self, source: str) -> list[StandardAsset]:
+        """
+        Get all assets from a specific source.
+
+        Args:
+            source: Plugin ID
+
+        Returns:
+            List of assets from that source
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM assets WHERE source = ?",
+                (source,),
+            )
+            return [self._row_to_asset(row) for row in cursor]
