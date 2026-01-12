@@ -301,3 +301,40 @@ class AssetDatabase:
                 (asset_id,),
             )
             return cursor.rowcount > 0
+
+    def search_assets(
+        self,
+        query: str,
+        source: str | None = None,
+        status: AssetStatus | None = None,
+    ) -> list[StandardAsset]:
+        """
+        Search assets by name.
+
+        Args:
+            query: Search string (matches against name)
+            source: Optional plugin ID to filter by
+            status: Optional status to filter by
+
+        Returns:
+            List of matching assets
+        """
+        conditions = ["name LIKE ?"]
+        params: list[str] = [f"%{query}%"]
+
+        if source:
+            conditions.append("source = ?")
+            params.append(source)
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status.value)
+
+        where_clause = " AND ".join(conditions)
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"SELECT * FROM assets WHERE {where_clause}",
+                params,
+            )
+            return [self._row_to_asset(row) for row in cursor]
