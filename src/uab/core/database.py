@@ -145,3 +145,43 @@ class AssetDatabase:
         with self._connect() as conn:
             cursor = conn.execute(query, [source, *external_ids])
             return {row["external_id"] for row in cursor}
+
+    def upsert_asset(self, asset: StandardAsset) -> None:
+        """
+        Insert or update an asset.
+
+        Uses file locking for write serialization.
+
+        Args:
+            asset: The asset to upsert
+        """
+        with self._write_lock(), self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO assets (
+                    id, source, external_id, name, type, status,
+                    local_path, thumbnail_url, thumbnail_path, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source, external_id) DO UPDATE SET
+                    id = excluded.id,
+                    name = excluded.name,
+                    type = excluded.type,
+                    status = excluded.status,
+                    local_path = excluded.local_path,
+                    thumbnail_url = excluded.thumbnail_url,
+                    thumbnail_path = excluded.thumbnail_path,
+                    metadata = excluded.metadata
+                """,
+                (
+                    asset.id,
+                    asset.source,
+                    asset.external_id,
+                    asset.name,
+                    asset.type.value,
+                    asset.status.value,
+                    str(asset.local_path) if asset.local_path else None,
+                    asset.thumbnail_url,
+                    str(asset.thumbnail_path) if asset.thumbnail_path else None,
+                    json.dumps(asset.metadata) if asset.metadata else None,
+                ),
+            )
