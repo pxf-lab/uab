@@ -266,3 +266,38 @@ class AssetDatabase:
                 (source,),
             )
             return [self._row_to_asset(row) for row in cursor]
+
+    def remove_asset_by_external_id(self, source: str, external_id: str) -> bool:
+        """
+        Remove an asset record.
+
+        Args:
+            source: Plugin ID
+            external_id: External ID from source
+
+        Returns:
+            True if an asset was deleted, False if not found
+        """
+        with self._write_lock(), self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM assets WHERE source = ? AND external_id = ?",
+                (source, external_id),
+            )
+            return cursor.rowcount > 0
+
+    def remove_asset_by_id(self, asset_id: str) -> bool:
+        """
+        Remove an asset record by internal ID.
+
+        Args:
+            asset_id: Internal asset ID
+
+        Returns:
+            True if an asset was deleted, False if not found
+        """
+        with self._write_lock(), self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM assets WHERE id = ?",
+                (asset_id,),
+            )
+            return cursor.rowcount > 0
