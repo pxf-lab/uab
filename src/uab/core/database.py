@@ -118,3 +118,30 @@ class AssetDatabase:
             "thumbnail_path": row["thumbnail_path"],
             "metadata": metadata,
         })
+
+    def get_already_downloaded_ids_compared_to_external_ids(self, source: str, external_ids: list[str]) -> set[str]:
+        """
+        Batch lookup for comparing local database with external source.
+
+        Returns the set of external_ids that are already downloaded in the database
+        for the given source.
+
+        Args:
+            source: Plugin ID (e.g., "polyhaven")
+            external_ids: List of external IDs to check
+
+        Returns:
+            Set of external_ids that exist locally
+        """
+        if not external_ids:
+            return set()
+
+        placeholders = ",".join("?" * len(external_ids))
+        query = f"""
+            SELECT external_id FROM assets
+            WHERE source = ? AND external_id IN ({placeholders})
+        """
+
+        with self._connect() as conn:
+            cursor = conn.execute(query, [source, *external_ids])
+            return {row["external_id"] for row in cursor}
