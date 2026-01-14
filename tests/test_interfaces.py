@@ -1,4 +1,4 @@
-from uab.core.interfaces import AssetLibraryPlugin
+from uab.core.interfaces import AssetLibraryPlugin, Plugin
 from uab.core.models import StandardAsset
 
 
@@ -21,3 +21,8 @@ class DummyLibraryPlugin(AssetLibraryPlugin):
     @property
     def can_remove(self) -> bool:
         return True
+
+
+def test_plugin_type_registry_contains_asset_library() -> None:
+    plugin_type = Plugin.get_type("AssetLibraryPlugin")
+    assert plugin_type is AssetLibraryPlugin
