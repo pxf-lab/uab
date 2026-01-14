@@ -78,8 +78,8 @@ def test_search_assets_by_name(
 
 def test_get_existing_ids_compared_to_external_source(tmp_path: Path, make_asset: Callable[..., StandardAsset]) -> None:
     db = AssetDatabase(tmp_path / "assets.db")
-    a1 = make_asset(external_id="brick_001")
-    a2 = make_asset(external_id="wood_001")
+    a1 = make_asset(source="polyhaven", external_id="brick_001")
+    a2 = make_asset(source="polyhaven", external_id="wood_001")
 
     db.upsert_asset(a1)
     db.upsert_asset(a2)
