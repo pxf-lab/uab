@@ -119,6 +119,7 @@ class AssetDatabase:
             "metadata": metadata,
         })
 
+    # TODO: figure out a better name for this method, this is ridiculous
     def get_already_downloaded_ids_compared_to_external_source(self, source: str, external_ids: list[str]) -> set[str]:
         """
         Batch lookup for comparing local database with external source.
