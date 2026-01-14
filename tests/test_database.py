@@ -74,3 +74,19 @@ def test_search_assets_by_name(
     results = db.search_assets("Brick")
     assert len(results) == 1
     assert results[0].external_id == "brick_001"
+
+
+def test_get_existing_ids(tmp_path: Path, make_asset: Callable[..., StandardAsset]) -> None:
+    db = AssetDatabase(tmp_path / "assets.db")
+    a1 = make_asset(external_id="brick_001")
+    a2 = make_asset(external_id="wood_001")
+
+    db.upsert_asset(a1)
+    db.upsert_asset(a2)
+
+    existing = db.get_already_downloaded_ids_compared_to_external_source(
+        "polyhaven",
+        ["brick_001", "stone_001", "wood_001"],
+    )
+
+    assert existing == {"brick_001", "wood_001"}
