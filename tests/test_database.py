@@ -22,3 +22,15 @@ def test_upsert_and_fetch_by_external_id(tmp_path: Path, make_asset: Callable[..
     assert fetched.name == asset.name
     assert fetched.status == asset.status
     assert fetched.metadata == asset.metadata
+
+
+def test_get_asset_by_id(tmp_path: Path, make_asset: Callable[..., StandardAsset]) -> None:
+    db = AssetDatabase(tmp_path / "assets.db")
+    asset = make_asset(external_id="wood_001", name="Wood")
+
+    db.upsert_asset(asset)
+    fetched = db.get_asset_by_id(asset.id)
+
+    assert fetched is not None
+    assert fetched.external_id == asset.external_id
+    assert fetched.source == asset.source
