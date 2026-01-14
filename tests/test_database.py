@@ -90,3 +90,12 @@ def test_get_existing_ids(tmp_path: Path, make_asset: Callable[..., StandardAsse
     )
 
     assert existing == {"brick_001", "wood_001"}
+
+
+def test_remove_asset_by_external_id(tmp_path: Path, make_asset: Callable[..., StandardAsset]) -> None:
+    db = AssetDatabase(tmp_path / "assets.db")
+    asset = make_asset(external_id="remove_me")
+
+    db.upsert_asset(asset)
+    assert db.remove_asset_by_external_id(asset.source, asset.external_id)
+    assert db.get_asset_by_external_id(asset.source, asset.external_id) is None
