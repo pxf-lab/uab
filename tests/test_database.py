@@ -36,7 +36,10 @@ def test_get_asset_by_id(tmp_path: Path, make_asset: Callable[..., StandardAsset
     assert fetched.source == asset.source
 
 
-def test_get_local_assets_and_search(tmp_path: Path, make_asset: Callable[..., StandardAsset]) -> None:
+def test_get_local_assets_filters_by_status(
+    tmp_path: Path,
+    make_asset: Callable[..., StandardAsset],
+) -> None:
     db = AssetDatabase(tmp_path / "assets.db")
     a1 = make_asset(external_id="brick_001", name="Brick Wall")
     a2 = make_asset(
@@ -51,6 +54,22 @@ def test_get_local_assets_and_search(tmp_path: Path, make_asset: Callable[..., S
     local_assets = db.get_local_assets()
     assert len(local_assets) == 1
     assert local_assets[0].external_id == "brick_001"
+
+
+def test_search_assets_by_name(
+    tmp_path: Path,
+    make_asset: Callable[..., StandardAsset],
+) -> None:
+    db = AssetDatabase(tmp_path / "assets.db")
+    a1 = make_asset(external_id="brick_001", name="Brick Wall")
+    a2 = make_asset(
+        external_id="marble_001",
+        name="Marble Floor",
+        status=AssetStatus.CLOUD,
+    )
+
+    db.upsert_asset(a1)
+    db.upsert_asset(a2)
 
     results = db.search_assets("Brick")
     assert len(results) == 1
