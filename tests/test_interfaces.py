@@ -26,3 +26,7 @@ class DummyLibraryPlugin(AssetLibraryPlugin):
 def test_plugin_type_registry_contains_asset_library() -> None:
     plugin_type = Plugin.get_type("AssetLibraryPlugin")
     assert plugin_type is AssetLibraryPlugin
+
+
+def test_asset_library_registry_registers_concrete_plugins() -> None:
+    assert AssetLibraryPlugin.get("dummy") is DummyLibraryPlugin
