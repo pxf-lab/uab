@@ -47,10 +47,10 @@ class StandardAsset:
 
     id: str
     source: str
-    external_id: str = ""
     name: str
     type: AssetType
     status: AssetStatus
+    external_id: str = ""
     local_path: Path | None = None
     thumbnail_url: str | None = ""
     thumbnail_path: Path | None = None

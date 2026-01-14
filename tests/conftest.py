@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from typing import Callable
 import pytest
-from uab.core.models import AssetStatus, AssetType, StandardAsset
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +15,8 @@ if str(SRC_PATH) not in sys.path:
 
 @pytest.fixture
 def make_asset(tmp_path: Path) -> Callable[..., StandardAsset]:
+    from uab.core.models import AssetStatus, AssetType, StandardAsset
+
     def _make(**overrides):
         # Create a unique directory for this specific asset creation
         # to ensure no collisions between multiple assets in one test.
