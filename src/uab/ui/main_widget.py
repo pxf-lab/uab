@@ -2,9 +2,28 @@
 
 This is the core UI component that can be embedded in any QWidget container,
 including Houdini Python panels.
+
+Architecture Note:
+    In embedded contexts like Houdini's Python Panel, the host expects a QWidget
+    to be returned from onCreateInterface(). This widget owns its MainPresenter
+    via lazy initialization through the initialize() method. This ensures the
+    widget's lifetime naturally manages the presenter's lifetime.
+
+Usage:
+    # Standalone
+    widget = MainWidget()
+    widget.initialize()  # Uses StandaloneIntegration
+
+    # Houdini Python Panel
+    widget = MainWidget()
+    widget.initialize(host_integration=HoudiniIntegration())
+    return widget
 """
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
@@ -20,6 +39,10 @@ from PySide6.QtWidgets import (
 
 from uab.ui.status_bar import StatusBar
 
+if TYPE_CHECKING:
+    from uab.core.interfaces import HostIntegration
+    from uab.presenters.main_presenter import MainPresenter
+
 
 class MainWidget(QWidget):
     """
@@ -28,9 +51,16 @@ class MainWidget(QWidget):
     This widget contains all the main UI functionality and can be embedded
     directly in a Houdini Python panel or hosted by MainWindow for standalone use.
 
+    The widget owns its presenter, which is created via the initialize() method.
+    This pattern ensures proper lifetime management in embedded contexts where
+    only the widget reference is retained by the host.
+
     Signals:
         new_tab_requested: Emitted when user requests a new tab for a plugin.
         tab_closed: Emitted when user closes a tab.
+
+    Attributes:
+        presenter: The MainPresenter instance (None until initialize() is called)
     """
 
     new_tab_requested = Signal(str)  # plugin_id
@@ -38,6 +68,9 @@ class MainWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+
+        # Presenter is created lazily via initialize()
+        self._presenter: MainPresenter | None = None
 
         # Load stylesheet
         self._load_stylesheet()
@@ -223,3 +256,74 @@ class MainWidget(QWidget):
             "A cross-DCC asset browser for managing and importing assets.\n\n"
             "Supports local assets and Poly Haven cloud assets.",
         )
+
+    # -------------------------------------------------------------------------
+    # Initialization API
+    # -------------------------------------------------------------------------
+
+    def initialize(
+        self, host_integration: HostIntegration | None = None
+    ) -> MainPresenter:
+        """
+        Initialize the presenter and wire up the application.
+
+        This method creates the MainPresenter, discovers plugins, and sets up
+        the full application. Call this after constructing the widget.
+
+        In Houdini, pass the HoudiniIntegration. For standalone/testing,
+        pass None to use StandaloneIntegration (or pass it explicitly).
+
+        Args:
+            host_integration: The host integration to use. If None, a
+                StandaloneIntegration will be created.
+
+        Returns:
+            The created MainPresenter instance.
+
+        Raises:
+            RuntimeError: If initialize() has already been called.
+
+        Example:
+            # Houdini Python Panel
+            def onCreateInterface():
+                from uab.ui import MainWidget
+                from uab.integrations.houdini import HoudiniIntegration
+
+                widget = MainWidget()
+                widget.initialize(host_integration=HoudiniIntegration())
+                return widget
+
+            # Standalone
+            widget = MainWidget()
+            presenter = widget.initialize()
+        """
+        if self._presenter is not None:
+            raise RuntimeError("MainWidget.initialize() has already been called")
+
+        # Import here to avoid circular imports and allow presenter to not exist yet
+        from uab.presenters.main_presenter import MainPresenter
+
+        # Create default host integration if not provided
+        if host_integration is None:
+            from uab.integrations.standalone import StandaloneIntegration
+
+            host_integration = StandaloneIntegration()
+
+        # Create and store the presenter
+        self._presenter = MainPresenter(view=self, host=host_integration)
+
+        return self._presenter
+
+    @property
+    def presenter(self) -> MainPresenter | None:
+        """
+        The MainPresenter instance, or None if not yet initialized.
+
+        Use initialize() to create the presenter.
+        """
+        return self._presenter
+
+    @property
+    def is_initialized(self) -> bool:
+        """Return True if initialize() has been called."""
+        return self._presenter is not None
