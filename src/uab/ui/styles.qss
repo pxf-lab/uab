@@ -1,0 +1,515 @@
+/*
+ * Universal Asset Browser - Centralized Stylesheet
+ * 
+ * Color Palette:
+ * - Background dark:    #1e1e1e
+ * - Background medium:  #242424
+ * - Background light:   #2d2d2d
+ * - Border dark:        #333333
+ * - Border medium:      #3d3d3d
+ * - Border light:       #4d4d4d
+ * - Accent blue:        #4a9eff
+ * - Accent hover:       #506680
+ * - Text primary:       #e0e0e0
+ * - Text secondary:     #999999
+ * - Text muted:         #666666
+ */
+
+/* ============================================
+   Main Window
+   ============================================ */
+
+QMainWindow {
+    background-color: #1e1e1e;
+}
+
+/* ============================================
+   Tab Widget (Browser-style tabs)
+   ============================================ */
+
+QTabWidget::pane {
+    border: none;
+    background-color: #1e1e1e;
+    top: 0px;
+}
+
+QTabWidget::tab-bar {
+    left: 8px;
+}
+
+QTabBar {
+    background-color: #141414;
+    border: none;
+    qproperty-drawBase: 0;
+}
+
+QTabBar::tab {
+    background-color: #1a1a1a;
+    color: #888888;
+    border: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    padding: 8px 16px;
+    margin-right: 2px;
+    margin-top: 6px;
+    min-width: 120px;
+    max-width: 200px;
+}
+
+QTabBar::tab:selected {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    margin-top: 2px;
+    padding-top: 10px;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #252525;
+    color: #aaaaaa;
+}
+
+QTabBar::tab:first {
+    margin-left: 0px;
+}
+
+/* Custom tab close button */
+#tabCloseButton {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: #666666;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0px;
+    margin: 0px;
+}
+
+#tabCloseButton:hover {
+    background-color: #ff5555;
+    color: #ffffff;
+}
+
+/* Tab bar background strip */
+QTabWidget > QWidget {
+    background-color: #1e1e1e;
+}
+
+/* New tab button (+ button) */
+#newTabButton {
+    background-color: transparent;
+    color: #888888;
+    border: none;
+    border-radius: 4px;
+    font-size: 18px;
+    font-weight: bold;
+    padding-bottom: 2px;
+}
+
+#newTabButton:hover {
+    background-color: #333333;
+    color: #e0e0e0;
+}
+
+#newTabButton:pressed {
+    background-color: #444444;
+}
+
+/* Tab header background */
+#tabHeader {
+    background-color: #141414;
+    border-bottom: 1px solid #333333;
+}
+
+/* ============================================
+   Browser View
+   ============================================ */
+
+BrowserView {
+    background-color: #1e1e1e;
+}
+
+BrowserView QScrollArea {
+    border: none;
+    background-color: #1e1e1e;
+}
+
+BrowserView QListView {
+    background-color: #1e1e1e;
+    border: none;
+    outline: none;
+}
+
+BrowserView QListView::item {
+    background-color: #242424;
+    border: 2px solid #333333;
+    border-radius: 10px;
+    padding: 4px;
+}
+
+BrowserView QListView::item:hover {
+    background-color: #2d2d2d;
+    border: 2px solid #506680;
+}
+
+BrowserView QListView::item:selected {
+    background-color: #2a2a2a;
+    border: 2px solid #4a9eff;
+}
+
+/* Empty state placeholder */
+#emptyStateIcon {
+    font-size: 64pt;
+    color: #666666;
+}
+
+#emptyStateText {
+    color: #808080;
+    font-size: 16pt;
+    font-weight: 500;
+}
+
+/* ============================================
+   Toolbar
+   ============================================ */
+
+#toolbar {
+    background-color: #2d2d2d;
+    border-bottom: 2px solid #3d3d3d;
+}
+
+#toolbar QLabel {
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+#toolbar QLineEdit {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    border: 2px solid #3d3d3d;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10pt;
+}
+
+#toolbar QLineEdit:focus {
+    border: 2px solid #4a9eff;
+}
+
+#toolbar QLineEdit:hover {
+    border: 2px solid #4d4d4d;
+}
+
+#toolbar QComboBox {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    border: 2px solid #3d3d3d;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10pt;
+}
+
+#toolbar QComboBox:hover {
+    border: 2px solid #4d4d4d;
+}
+
+#toolbar QComboBox:focus {
+    border: 2px solid #4a9eff;
+}
+
+#toolbar QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+#toolbar QComboBox::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #e0e0e0;
+    margin-right: 5px;
+}
+
+#toolbar QComboBox QAbstractItemView {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 2px solid #3d3d3d;
+    border-radius: 6px;
+    selection-background-color: #4a9eff;
+    selection-color: #ffffff;
+    padding: 4px;
+}
+
+#toolbar QComboBox QAbstractItemView::item {
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+#toolbar QComboBox QAbstractItemView::item:hover {
+    background-color: #3d3d3d;
+}
+
+/* ============================================
+   Detail Panel
+   ============================================ */
+
+#detailPanel {
+    background-color: #1e1e1e;
+    border-left: 2px solid #3d3d3d;
+}
+
+#detailPanel QScrollArea {
+    border: none;
+    background-color: transparent;
+}
+
+#detailPreview {
+    border: 1px solid #333333;
+    background-color: #0a0a0a;
+    border-radius: 4px;
+}
+
+#detailPreview[noPreview="true"] {
+    color: #666666;
+    font-size: 14pt;
+}
+
+/* Detail panel labels */
+#detailPanel .fieldLabel {
+    font-weight: bold;
+    font-size: 11pt;
+    color: #999999;
+}
+
+#detailPanel .fieldValue {
+    color: #e0e0e0;
+    padding: 5px;
+    font-size: 11pt;
+}
+
+#detailPanel .fieldValueMuted {
+    color: #888888;
+    padding: 5px;
+    font-size: 10pt;
+}
+
+/* Detail panel separators */
+#detailPanel QFrame[frameShape="4"] {
+    color: #333333;
+}
+
+/* Detail panel buttons */
+#detailPanel QPushButton {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 2px solid #3d3d3d;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 10pt;
+}
+
+#detailPanel QPushButton:hover {
+    background-color: #3d3d3d;
+    border: 2px solid #4d4d4d;
+}
+
+#detailPanel QPushButton:pressed {
+    background-color: #4a9eff;
+    border: 2px solid #4a9eff;
+}
+
+#detailPanel QPushButton#primaryButton {
+    background-color: #4a9eff;
+    border: 2px solid #4a9eff;
+    color: #ffffff;
+}
+
+#detailPanel QPushButton#primaryButton:hover {
+    background-color: #5aafff;
+    border: 2px solid #5aafff;
+}
+
+/* ============================================
+   Status Bar
+   ============================================ */
+
+#statusBar {
+    background-color: #141414;
+    border-top: 2px solid #4a4a4a;
+    border-radius: 0px;
+}
+
+#statusBarMessage {
+    color: #ffffff;
+    font-size: 12pt;
+    padding: 2px;
+    background-color: transparent;
+    border: none;
+}
+
+#statusBarMessage[messageType="info"] {
+    color: #ffffff;
+}
+
+#statusBarMessage[messageType="warning"] {
+    color: #ffa500;
+}
+
+#statusBarMessage[messageType="error"] {
+    color: #ff4444;
+}
+
+#statusBarMessage[messageType="success"] {
+    color: #44ff44;
+}
+
+/* ============================================
+   Progress Bar
+   ============================================ */
+
+QProgressBar {
+    background-color: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    text-align: center;
+    color: #e0e0e0;
+}
+
+QProgressBar::chunk {
+    background-color: #4a9eff;
+    border-radius: 3px;
+}
+
+/* ============================================
+   Context Menu
+   ============================================ */
+
+QMenu {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 2px solid #3d3d3d;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QMenu::item {
+    padding: 6px 20px;
+    border-radius: 4px;
+}
+
+QMenu::item:selected {
+    background-color: #4a9eff;
+    color: #ffffff;
+}
+
+QMenu::item:disabled {
+    color: #666666;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #3d3d3d;
+    margin: 4px 10px;
+}
+
+/* ============================================
+   Scrollbars
+   ============================================ */
+
+QScrollBar:vertical {
+    background-color: #1e1e1e;
+    width: 12px;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #3d3d3d;
+    border-radius: 6px;
+    min-height: 30px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #4d4d4d;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+QScrollBar:horizontal {
+    background-color: #1e1e1e;
+    height: 12px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #3d3d3d;
+    border-radius: 6px;
+    min-width: 30px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #4d4d4d;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: none;
+}
+
+/* ============================================
+   Splitter
+   ============================================ */
+
+QSplitter::handle {
+    background-color: #3d3d3d;
+}
+
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+
+QSplitter::handle:vertical {
+    height: 2px;
+}
+
+QSplitter::handle:hover {
+    background-color: #4a9eff;
+}
+
+/* ============================================
+   Loading Indicator
+   ============================================ */
+
+#loadingIndicator {
+    color: #e0e0e0;
+    font-size: 12pt;
+}
+
+/* ============================================
+   Badges and Overlays (for delegate painting reference)
+   ============================================ */
+
+/*
+ * Status badge colors (used in AssetDelegate):
+ * - LOCAL:       #44ff44 (green checkmark)
+ * - CLOUD:       #888888 (gray cloud)
+ * - DOWNLOADING: #4a9eff (blue spinner)
+ *
+ * Type badge colors:
+ * - TEXTURE:     #ff9944 (orange)
+ * - MODEL:       #44ff99 (green)
+ * - HDRI:        #9944ff (purple)
+ */
