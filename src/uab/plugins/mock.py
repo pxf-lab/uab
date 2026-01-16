@@ -150,7 +150,8 @@ class MockPlugin(AssetLibraryPlugin):
                     name=a.name,
                     type=a.type,
                     status=AssetStatus.LOCAL,
-                    local_path=Path.home() / ".uab" / "mock" / f"{a.external_id}",
+                    local_path=Path.home() / ".uab" / "mock" /
+                    f"{a.external_id}",
                     thumbnail_url=a.thumbnail_url,
                     thumbnail_path=a.thumbnail_path,
                     metadata=a.metadata,

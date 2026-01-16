@@ -100,7 +100,8 @@ class StandardAsset:
             name=data.get("name", ""),
             type=AssetType(data.get("type", AssetType.TEXTURE.value)),
             status=AssetStatus(data.get("status", AssetStatus.CLOUD.value)),
-            id=data.get("id", ""),  # Empty string triggers auto-generation in __post_init__
+            # Empty string triggers auto-generation in __post_init__
+            id=data.get("id", ""),
             external_id=data.get("external_id", ""),
             local_path=Path(local_path) if local_path else None,
             thumbnail_url=data.get("thumbnail_url", ""),
