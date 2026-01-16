@@ -45,11 +45,11 @@ class StandardAsset:
         metadata (dict[str, Any]): Flexible payload containing files, resolutions, and other plugin-specific data.
     """
 
-    id: str
     source: str
     name: str
     type: AssetType
     status: AssetStatus
+    id: str = ""
     external_id: str = ""
     local_path: Path | None = None
     thumbnail_url: str | None = ""
@@ -69,7 +69,9 @@ class StandardAsset:
         if isinstance(self.status, str):
             self.status = AssetStatus(self.status)
 
-        self.id = f"{self.source}-{self.name}-{str(uuid4())}"
+        # Generate ID only if not provided (empty string or None)
+        if not self.id:
+            self.id = f"{self.source}-{self.name}-{str(uuid4())}"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization (e.g., database storage)."""
@@ -94,12 +96,12 @@ class StandardAsset:
         thumbnail_path = data.get("thumbnail_path")
 
         return cls(
-            id=data.get("id", str(uuid4())),
             source=data.get("source", ""),
-            external_id=data.get("external_id", ""),
             name=data.get("name", ""),
             type=AssetType(data.get("type", AssetType.TEXTURE.value)),
             status=AssetStatus(data.get("status", AssetStatus.CLOUD.value)),
+            id=data.get("id", ""),  # Empty string triggers auto-generation in __post_init__
+            external_id=data.get("external_id", ""),
             local_path=Path(local_path) if local_path else None,
             thumbnail_url=data.get("thumbnail_url", ""),
             thumbnail_path=Path(thumbnail_path) if thumbnail_path else None,
