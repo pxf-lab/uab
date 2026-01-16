@@ -6,6 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pyside6>=6.10.1",
+    "pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "openexr>=3.2.0",
+    "imageio>=2.31.0",
+    "imath>=0.0.2",
+    "opencv-python>=4.11.0.86",
 ]
 
 [dependency-groups]
