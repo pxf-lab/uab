@@ -29,6 +29,7 @@ from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QTabWidget,
     QTabBar,
     QMenuBar,
@@ -72,45 +73,45 @@ class MainWidget(QWidget):
         # Presenter is created lazily via initialize()
         self._presenter: MainPresenter | None = None
 
-        # Load stylesheet
         self._load_stylesheet()
 
-        # Main layout
+        # Main
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Menu bar (as a regular widget in layout)
+        # Menu bar
         self._menu_bar = QMenuBar()
         self._menu_bar.setObjectName("mainMenuBar")
         layout.addWidget(self._menu_bar)
         self._setup_menus()
 
-        # Tab widget (browser-style)
+        # Tab widget
         self._tab_widget = QTabWidget()
-        self._tab_widget.setTabsClosable(False)  # We use custom close buttons
+        self._tab_widget.setTabsClosable(False)
         self._tab_widget.setMovable(True)
         self._tab_widget.setDocumentMode(True)
         self._tab_widget.setElideMode(Qt.TextElideMode.ElideRight)
-        self._tab_widget.tabCloseRequested.connect(self._on_tab_close_requested)
-        layout.addWidget(self._tab_widget, 1)  # stretch factor 1
+        self._tab_widget.tabCloseRequested.connect(
+            self._on_tab_close_requested)
+        layout.addWidget(self._tab_widget, 1)  # second arg is stretch factor
 
-        # New tab button (like browser + button)
+        # new tab button
         self._new_tab_btn = QPushButton("+")
         self._new_tab_btn.setObjectName("newTabButton")
-        self._new_tab_btn.setFixedSize(32, 32)
+        self._new_tab_btn.setFixedSize(28, 28)
         self._new_tab_btn.setToolTip("New Tab")
         self._new_tab_btn.clicked.connect(self._on_new_tab_clicked)
 
-        # Create a container for the corner widget to add padding
-        corner_container = QWidget()
-        corner_container.setFixedSize(40, 36)
-        corner_container.setStyleSheet("background: transparent;")
-        self._new_tab_btn.setParent(corner_container)
-        self._new_tab_btn.move(4, 2)
+        # empty widget to hold the new tab button's layout
+        corner_widget = QWidget()
+        corner_layout = QHBoxLayout(corner_widget)
+        corner_layout.setContentsMargins(4, 4, 8, 0)
+        corner_layout.setSpacing(0)
+        corner_layout.addWidget(self._new_tab_btn)
 
-        # Add new tab button to the right of tab bar
-        self._tab_widget.setCornerWidget(corner_container, Qt.Corner.TopRightCorner)
+        self._tab_widget.setCornerWidget(
+            corner_widget, Qt.Corner.TopRightCorner)
 
         # Status bar
         self._status_bar = StatusBar()
@@ -126,22 +127,19 @@ class MainWidget(QWidget):
 
     def _setup_menus(self) -> None:
         """Set up the menu bar with File and Help menus."""
-        # File menu
         file_menu = QMenu("&File", self)
         self._menu_bar.addMenu(file_menu)
 
-        # New Tab submenu - populated dynamically via populate_new_tab_menu
+        # note that this menu is populated dynamically via populate_new_tab_menu
         self._new_tab_menu = QMenu("New Tab", self)
         file_menu.addMenu(self._new_tab_menu)
 
         file_menu.addSeparator()
 
-        # Close Tab action
-        close_tab_action = file_menu.addAction("Close Tab")
+        close_tab_action = file_menu.addAction("Close Tab (Ctrl+W)")
         close_tab_action.setShortcut("Ctrl+W")
         close_tab_action.triggered.connect(self._close_current_tab)
 
-        # Help menu
         help_menu = QMenu("&Help", self)
         self._menu_bar.addMenu(help_menu)
 
@@ -160,7 +158,8 @@ class MainWidget(QWidget):
             action = self._new_tab_menu.addAction(display_name)
             # Capture plugin_id in lambda closure
             action.triggered.connect(
-                lambda checked=False, pid=plugin_id: self.new_tab_requested.emit(pid)
+                lambda checked=False, pid=plugin_id: self.new_tab_requested.emit(
+                    pid)
             )
 
     def add_tab(self, widget: QWidget, title: str) -> int:
@@ -191,7 +190,6 @@ class MainWidget(QWidget):
         btn.setObjectName("tabCloseButton")
         btn.setFixedSize(20, 20)
         btn.setToolTip("Close Tab")
-        # Find the actual tab index when clicked (handles reordering)
         btn.clicked.connect(lambda: self._close_tab_for_button(btn))
         return btn
 
@@ -199,6 +197,7 @@ class MainWidget(QWidget):
         """Find and close the tab associated with this close button."""
         tab_bar = self._tab_widget.tabBar()
         for i in range(tab_bar.count()):
+            # TODO: there has to be a cleaner way to do this
             if tab_bar.tabButton(i, QTabBar.ButtonPosition.RightSide) == button:
                 self._on_tab_close_requested(i)
                 break
@@ -243,8 +242,8 @@ class MainWidget(QWidget):
     def _on_new_tab_clicked(self) -> None:
         """Handle new tab button click - shows menu if multiple plugins available."""
         if self._new_tab_menu.actions():
-            # Position menu below the button
-            pos = self._new_tab_btn.mapToGlobal(self._new_tab_btn.rect().bottomLeft())
+            pos = self._new_tab_btn.mapToGlobal(
+                self._new_tab_btn.rect().bottomLeft())
             self._new_tab_menu.exec(pos)
 
     def _show_about(self) -> None:
@@ -257,9 +256,7 @@ class MainWidget(QWidget):
             "Supports local assets and Poly Haven cloud assets.",
         )
 
-    # -------------------------------------------------------------------------
-    # Initialization API
-    # -------------------------------------------------------------------------
+    # PUBLIC API
 
     def initialize(
         self, host_integration: HostIntegration | None = None
@@ -298,9 +295,10 @@ class MainWidget(QWidget):
             presenter = widget.initialize()
         """
         if self._presenter is not None:
-            raise RuntimeError("MainWidget.initialize() has already been called")
+            raise RuntimeError(
+                "MainWidget.initialize() has already been called")
 
-        # Import here to avoid circular imports and allow presenter to not exist yet
+        # import here to avoid circular imports and allow presenter to not exist yet
         from uab.presenters.main_presenter import MainPresenter
 
         # Create default host integration if not provided
