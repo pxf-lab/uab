@@ -1,7 +1,8 @@
 """Abstract base classes and plugin registry for UAB."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 from uab.core.models import StandardAsset
 
@@ -153,6 +154,32 @@ class AssetLibraryPlugin(Plugin, ABC):
             }
         """
         return None
+
+
+@runtime_checkable
+class SupportsLocalImport(Protocol):
+    """
+    Protocol for plugins that support importing local files.
+
+    Plugins implementing this protocol can import files from the filesystem
+    and add them to the asset library.
+    """
+
+    def add_assets(self, paths: Path | list[Path]) -> list[StandardAsset]:
+        """
+        Add assets from files or directories.
+
+        Accepts either a single path or list of paths. Each path can be:
+        - A file: Added directly if it has a supported extension
+        - A directory: Scanned recursively for supported files
+
+        Args:
+            paths: Single path or list of paths (files or directories)
+
+        Returns:
+            List of StandardAsset objects that were added
+        """
+        ...
 
 
 class HostIntegration(ABC):
