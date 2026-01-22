@@ -8,12 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 from uab.core.models import AssetStatus, StandardAsset
-
-# Default database location
-# TODO: Support Windows with %APPDATA% (I think?)
-# TODO: Support Linux
-DATABASE_PATH_DEFAULT = Path.home() / "library" / "application support" / \
-    "com.pixelfoundry" / "uab" / "assets.db"
+from uab.core import config
 
 # Schema version for future migrations
 SCHEMA_VERSION = 1
@@ -52,9 +47,9 @@ class AssetDatabase:
         Initialize the database.
 
         Args:
-            db_path: Path to database file. Defaults to ~/.uab/assets.db
+            db_path: Path to database file. Uses config.get_database_path() if not provided.
         """
-        self.db_path = db_path or DATABASE_PATH_DEFAULT
+        self.db_path = db_path or config.get_database_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock_path = self.db_path.with_suffix(".lock")
         self._init_db()
