@@ -42,8 +42,7 @@ class MockPlugin(AssetLibraryPlugin):
                 name="Sunset Beach",
                 type=AssetType.HDRI,
                 status=AssetStatus.LOCAL,
-                local_path=hdri_dir / "sunset_beach_1k.hdr" if hdri_dir.exists() else None,
-                thumbnail_url="https://example.com/sunset_beach_thumb.jpg",
+                local_path=hdri_dir / "afrikaans_church_interior_1k.hdr",
             ),
             StandardAsset(
                 source=self.plugin_id,
@@ -51,7 +50,7 @@ class MockPlugin(AssetLibraryPlugin):
                 name="Forest Clearing",
                 type=AssetType.HDRI,
                 status=AssetStatus.LOCAL,
-                local_path=hdri_dir / "forest_clearing_1k.hdr" if hdri_dir.exists() else None,
+                local_path=hdri_dir / "autumn_field_1k.hdr",
             ),
             StandardAsset(
                 source=self.plugin_id,
@@ -59,6 +58,7 @@ class MockPlugin(AssetLibraryPlugin):
                 name="Studio Softbox",
                 type=AssetType.HDRI,
                 status=AssetStatus.CLOUD,
+                local_path=hdri_dir / "autumn_hill_view_1k.hdr"
             ),
             StandardAsset(
                 source=self.plugin_id,
@@ -66,13 +66,7 @@ class MockPlugin(AssetLibraryPlugin):
                 name="Mountain Vista",
                 type=AssetType.HDRI,
                 status=AssetStatus.CLOUD,
-            ),
-            StandardAsset(
-                source=self.plugin_id,
-                external_id="brick_wall",
-                name="Brick Wall",
-                type=AssetType.TEXTURE,
-                status=AssetStatus.LOCAL,
+                local_path=hdri_dir / "golden_gate_hills_1k.hdr",
             ),
             StandardAsset(
                 source=self.plugin_id,
@@ -80,13 +74,15 @@ class MockPlugin(AssetLibraryPlugin):
                 name="Wood Planks",
                 type=AssetType.TEXTURE,
                 status=AssetStatus.CLOUD,
+                local_path=hdri_dir / "plank_flooring_04_diff_1k.png",
             ),
             StandardAsset(
                 source=self.plugin_id,
-                external_id="concrete_rough",
-                name="Concrete Rough",
+                external_id="dark_brick",
+                name="Dark Brick",
                 type=AssetType.TEXTURE,
                 status=AssetStatus.DOWNLOADING,
+                local_path=hdri_dir / "rock_wall_16_diff_1k.jpg",
             ),
             StandardAsset(
                 source=self.plugin_id,
