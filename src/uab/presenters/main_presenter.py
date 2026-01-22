@@ -30,10 +30,10 @@ class MainPresenter:
     Application shell controller. Basically a simple router for TabPresenters.
 
     The MainPresenter is the composition root of the application. It:
-        - Discovers available plugins via auto-registration
-        - Populates the "New Tab" menu with discovered plugins
-        - Creates TabPresenter instances when tabs are opened
-        - Manages tab lifecycle (creation, closure)
+    - Discovers available plugins via auto-registration
+    - Populates the "New Tab" menu with discovered plugins
+    - Creates TabPresenter instances when tabs are opened
+    - Manages tab lifecycle (creation, closure)
 
     The presenter is owned by the MainWidget to ensure proper lifetime management
     in embedded contexts like Houdini.
@@ -121,9 +121,7 @@ class MainPresenter:
             iter(self._plugins))
         self.create_tab(default_plugin_id)
 
-    # -------------
-    # Tab Management
-    # -------------
+    # TAB MANAGEMENT
 
     def create_tab(self, plugin_id: str) -> int:
         """
@@ -143,26 +141,20 @@ class MainPresenter:
 
         plugin = self._plugins[plugin_id]
 
-        # Create the browser view for this tab
         from uab.ui.browser import BrowserView
 
         browser_view = BrowserView()
 
-        # Configure the view based on plugin capabilities
         browser_view.set_download_enabled(plugin.can_download)
         browser_view.set_remove_enabled(plugin.can_remove)
 
-        # Set up renderers from host integration
         renderers = self._get_available_renderers()
         browser_view.set_renderers(renderers)
 
-        # Create the tab presenter (will be fully implemented in Phase 3.2)
         tab_presenter = self._create_tab_presenter(plugin, browser_view)
 
-        # Add the tab to the view
         tab_index = self._view.add_tab(browser_view, plugin.display_name)
 
-        # Store the tab info
         self._tabs[tab_index] = (plugin_id, tab_presenter)
 
         logger.info(
@@ -183,17 +175,13 @@ class MainPresenter:
 
         plugin_id, tab_presenter = self._tabs[index]
 
-        # Clean up the tab presenter
         if tab_presenter is not None:
             self._cleanup_tab_presenter(tab_presenter)
 
-        # Remove from view
         self._view.remove_tab(index)
 
-        # Remove from our tracking
         del self._tabs[index]
 
-        # Re-index remaining tabs (indices shift down after removal)
         self._reindex_tabs(index)
 
         logger.info(f"Closed tab for plugin: {plugin_id}")
@@ -229,8 +217,9 @@ class MainPresenter:
             host=self._host,
         )
 
-        # Connect status messages to main view
         tab_presenter.status_message.connect(self._view.set_status)
+
+        tab_presenter.download_complete.connect(self._on_download_complete)
 
         return tab_presenter
 
@@ -248,24 +237,18 @@ class MainPresenter:
         if hasattr(tab_presenter, "cleanup"):
             tab_presenter.cleanup()
 
-    # -------------------------------------------------------------------------
-    # Host Integration Helpers
-    # -------------------------------------------------------------------------
+    # INTERNAL METHODS
 
     def _get_available_renderers(self) -> list[str]:
         """Get the list of renderers supported by UAB and available in the host."""
-        # Get renderers that UAB supports
         uab_supported = self._host.uab_supported_renderers
 
-        # Get renderers available in the host
         host_available = self._host.get_host_available_renderers()
 
-        # Return intersection, maintaining UAB's preferred order
+        # intersection of renderers supported by UAB and available in the host
         return [r for r in uab_supported if r in host_available]
 
-    # -------------------------------------------------------------------------
-    # Signal Handlers
-    # -------------------------------------------------------------------------
+    # SIGNAL HANDLERS
 
     def _on_new_tab_requested(self, plugin_id: str) -> None:
         """Handle request to create a new tab."""
@@ -279,9 +262,19 @@ class MainPresenter:
         """Handle tab close request."""
         self.close_tab(index)
 
-    # -------------------------------------------------------------------------
-    # Public API
-    # -------------------------------------------------------------------------
+    def _on_download_complete(self) -> None:
+        """
+        Handle download completion from any tab
+
+        Refreshes any open local library tabs so newly downloaded assets appear.
+        """
+        for tab_index, (plugin_id, tab_presenter) in self._tabs.items():
+            if plugin_id == "local" and tab_presenter is not None:
+                logger.debug(
+                    f"Refreshing local library tab at index {tab_index}")
+                tab_presenter.refresh()
+
+    # PUBLIC API
 
     @property
     def view(self) -> MainWidget:
