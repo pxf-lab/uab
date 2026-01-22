@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSize, QRect, QPoint, QModelIndex
+from PySide6.QtCore import Qt, QSize, QRect, QPoint, QModelIndex, QTimer
 from PySide6.QtGui import (
     QPainter,
     QPixmap,
@@ -16,9 +16,78 @@ from PySide6.QtGui import (
     QPainterPath,
     QFontMetrics,
 )
-from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QStyle
+from PySide6.QtWidgets import (
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QStyle,
+    QDialog,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 from uab.core.models import StandardAsset, AssetStatus, AssetType
+
+
+class LargePreviewPopup(QDialog):
+    """Frameless popup that shows a large scaled pixmap near the hovered thumbnail."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent, Qt.WindowType.ToolTip)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.ToolTip
+        )
+        self.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setStyleSheet(
+            """
+            QDialog {
+                background-color: #000;
+                border: 2px solid #4a9eff;
+                border-radius: 8px;
+            }
+            """
+        )
+        self._label = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addWidget(self._label)
+        self._hover = False
+
+    def set_pixmap(self, pixmap: QPixmap, percent_of_screen: float = 0.5) -> None:
+        """Set the preview pixmap, scaled to fit screen percentage."""
+        if pixmap.isNull():
+            self._label.setText("No Preview")
+            self._label.setStyleSheet("color: #888; font-size: 10pt;")
+        else:
+            screen = self.screen()
+            max_size = screen.availableGeometry().size() * percent_of_screen
+            scaled = pixmap.scaled(
+                max_size.width(),
+                max_size.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self._label.setPixmap(scaled)
+            self._label.setStyleSheet("")
+
+    def enterEvent(self, event) -> None:
+        """Track when mouse enters the popup."""
+        self._hover = True
+
+    def leaveEvent(self, event) -> None:
+        """Hide popup when mouse leaves."""
+        self._hover = False
+        self.schedule_hide()
+
+    def schedule_hide(self) -> None:
+        """Hide with a small delay to allow cursor transition between widgets."""
+        QTimer.singleShot(100, self._safe_hide)
+
+    def _safe_hide(self) -> None:
+        """Only hide if not being hovered."""
+        if not self._hover:
+            self.hide()
 
 
 class LRUCache:
@@ -84,6 +153,9 @@ class AssetDelegate(QStyledItemDelegate):
 
     COLORS = AssetColor
 
+    # Delay before showing the large preview (milliseconds)
+    HOVER_PREVIEW_DELAY_MS = 1000
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._cell_size = 180
@@ -91,9 +163,162 @@ class AssetDelegate(QStyledItemDelegate):
         self._placeholder_pixmap: Optional[QPixmap] = None
         self._hovered_index: Optional[QModelIndex] = None
 
+        # Large preview popup
+        self._preview_popup: Optional[LargePreviewPopup] = None
+        self._hover_timer: Optional[QTimer] = None
+        self._preview_asset: Optional[StandardAsset] = None
+        self._preview_parent: Optional[QWidget] = None
+        self._preview_item_rect: Optional[QRect] = None
+
+    def set_preview_parent(self, parent: QWidget) -> None:
+        """Set the parent widget for the preview popup."""
+        self._preview_parent = parent
+
     def set_hovered_index(self, index: Optional[QModelIndex]) -> None:
         """Set the currently hovered index for hover effects."""
         self._hovered_index = index
+
+    def on_item_hover_enter(
+        self, index: QModelIndex, item_rect: QRect, global_pos: QPoint
+    ) -> None:
+        """
+        Called when the mouse enters an item's area.
+
+        Args:
+            index: The model index of the hovered item
+            item_rect: The item's rectangle in viewport coordinates
+            global_pos: The global position for popup placement reference
+        """
+        asset: Optional[StandardAsset] = index.data(Qt.ItemDataRole.UserRole)
+        if asset is None:
+            return
+
+        self._preview_asset = asset
+        self._preview_item_rect = item_rect
+
+        # Cancel any pending timer
+        if self._hover_timer is not None:
+            self._hover_timer.stop()
+
+        # Start a new timer to show preview after delay
+        self._hover_timer = QTimer()
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.timeout.connect(self._show_large_preview)
+        self._hover_timer.start(self.HOVER_PREVIEW_DELAY_MS)
+
+    def on_item_hover_leave(self) -> None:
+        """Called when the mouse leaves an item's area."""
+        # Stop pending timer if hover leaves before delay
+        if self._hover_timer is not None:
+            self._hover_timer.stop()
+            self._hover_timer = None
+
+        # Schedule popup hide
+        if self._preview_popup is not None:
+            self._preview_popup.schedule_hide()
+
+        self._preview_asset = None
+        self._preview_item_rect = None
+
+    def _show_large_preview(self) -> None:
+        """Show the large preview popup for the currently hovered asset."""
+        if self._preview_asset is None or self._preview_parent is None:
+            return
+
+        # Load full resolution image for the preview
+        pixmap = self._load_full_resolution_preview(self._preview_asset)
+
+        if pixmap is None or pixmap.isNull():
+            return
+
+        # Create popup if needed
+        if self._preview_popup is None:
+            self._preview_popup = LargePreviewPopup(self._preview_parent)
+
+        self._preview_popup.set_pixmap(pixmap)
+        self._preview_popup.adjustSize()
+
+        # Position the popup
+        self._position_preview_popup()
+        self._preview_popup.show()
+
+    def _load_full_resolution_preview(self, asset: StandardAsset) -> Optional[QPixmap]:
+        """Load full resolution image for the large preview popup."""
+        pixmap = QPixmap()
+
+        # Try thumbnail_path first (may be higher res than we think)
+        if asset.thumbnail_path and asset.thumbnail_path.exists():
+            pixmap.load(str(asset.thumbnail_path))
+
+        # Try local_path for the actual asset file
+        if pixmap.isNull() and asset.local_path and asset.local_path.exists():
+            suffix = asset.local_path.suffix.lower()
+            if suffix in (".png", ".jpg", ".jpeg", ".bmp", ".gif"):
+                pixmap.load(str(asset.local_path))
+            elif suffix in (".hdr", ".exr"):
+                # Use HDR/EXR loader with higher resolution for preview
+                from uab.ui.utils import load_hdri_thumbnail
+                hdr_pixmap = load_hdri_thumbnail(
+                    asset.local_path, max_size=1024)
+                if hdr_pixmap and not hdr_pixmap.isNull():
+                    pixmap = hdr_pixmap
+
+        # Fall back to model placeholder if needed
+        if pixmap.isNull() and asset.type == AssetType.MODEL:
+            placeholder = self._get_model_placeholder()
+            if placeholder:
+                pixmap = placeholder
+
+        return pixmap if not pixmap.isNull() else None
+
+    def _position_preview_popup(self) -> None:
+        """Position the preview popup near the hovered item."""
+        if (
+            self._preview_popup is None
+            or self._preview_item_rect is None
+            or self._preview_parent is None
+        ):
+            return
+
+        popup = self._preview_popup
+        popup_width = popup.width()
+        popup_height = popup.height()
+
+        # Convert item rect to global coordinates
+        item_top_left = self._preview_parent.mapToGlobal(
+            self._preview_item_rect.topLeft()
+        )
+        item_bottom_right = self._preview_parent.mapToGlobal(
+            self._preview_item_rect.bottomRight()
+        )
+
+        # Get screen boundaries
+        screen = popup.screen()
+        screen_rect = screen.availableGeometry()
+
+        # Default position: to the right of the item
+        x = item_bottom_right.x() + 10
+        y = item_top_left.y()
+
+        # If it would overflow on the right, move to the left
+        if x + popup_width > screen_rect.right():
+            x = item_top_left.x() - popup_width - 10
+
+        # Clamp vertical placement inside screen
+        if y + popup_height > screen_rect.bottom():
+            y = screen_rect.bottom() - popup_height - 10
+        if y < screen_rect.top():
+            y = screen_rect.top() + 10
+
+        popup.move(x, y)
+
+    def hide_preview(self) -> None:
+        """Immediately hide the preview popup."""
+        if self._hover_timer is not None:
+            self._hover_timer.stop()
+            self._hover_timer = None
+        if self._preview_popup is not None:
+            self._preview_popup.hide()
 
     def set_cell_size(self, size: int) -> None:
         """Update the cell size for zoom."""
@@ -210,6 +435,8 @@ class AssetDelegate(QStyledItemDelegate):
     ) -> None:
         """Paint the thumbnail image."""
         pixmap = self._get_thumbnail(asset)
+        if (pixmap is None or pixmap.isNull()) and asset.type == AssetType.MODEL:
+            pixmap = self._get_model_placeholder()
 
         if pixmap and not pixmap.isNull():
             # Scale to fit while preserving aspect ratio
@@ -247,6 +474,26 @@ class AssetDelegate(QStyledItemDelegate):
         font.setPointSize(9)
         painter.setFont(font)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "No Preview")
+
+    def _get_model_placeholder(self) -> Optional[QPixmap]:
+        """Load and cache the model placeholder pixmap."""
+        if self._placeholder_pixmap and not self._placeholder_pixmap.isNull():
+            return self._placeholder_pixmap
+
+        placeholder_path = (
+            Path(__file__).resolve().parents[3]
+            / "assets"
+            / "model-placeholder.png"
+        )
+        pixmap = QPixmap()
+        if placeholder_path.exists():
+            pixmap.load(str(placeholder_path))
+
+        if not pixmap.isNull():
+            self._placeholder_pixmap = pixmap
+            return pixmap
+
+        return None
 
     def _paint_status_overlay(
         self, painter: QPainter, rect: QRect, status: AssetStatus
@@ -334,7 +581,11 @@ class AssetDelegate(QStyledItemDelegate):
                          Qt.AlignmentFlag.AlignTop, elided)
 
     def _get_thumbnail(self, asset: StandardAsset) -> Optional[QPixmap]:
-        """Get thumbnail pixmap from cache or load it."""
+        """
+        Get thumbnail pixmap from cache or load it.
+
+        # TODO: HDR/EXR thumbnails need to be pre-rendered, it seems to be too slow to load during paint()
+        """
         cache_key = asset.id
 
         # Check cache first
@@ -347,19 +598,12 @@ class AssetDelegate(QStyledItemDelegate):
         if asset.thumbnail_path and asset.thumbnail_path.exists():
             pixmap.load(str(asset.thumbnail_path))
         elif asset.local_path:
-            # Try to load from local_path for image assets
             local_path = asset.local_path
             if local_path.exists():
                 suffix = local_path.suffix.lower()
-                if suffix in (".png", ".jpg", ".jpeg", ".bmp"):
+                if suffix in (".png", ".jpg", ".jpeg", ".bmp", ".gif"):
                     pixmap.load(str(local_path))
-                elif suffix in (".hdr", ".exr"):
-                    # Use HDR/EXR loader utility
-                    from uab.ui.utils import load_hdri_thumbnail
-                    hdr_pixmap = load_hdri_thumbnail(local_path, max_size=256)
-                    if hdr_pixmap and not hdr_pixmap.isNull():
-                        pixmap = hdr_pixmap
-
+                # TODO: see if there's a faster way to dynamically load HDR/EXR thumbnails during paint()
         if not pixmap.isNull():
             self._thumbnail_cache.put(cache_key, pixmap)
             return pixmap
