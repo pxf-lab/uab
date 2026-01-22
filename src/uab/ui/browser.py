@@ -1,5 +1,6 @@
 """Browser view for Universal Asset Browser."""
 
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import (
@@ -8,8 +9,9 @@ from PySide6.QtCore import (
     QSize,
     QTimer,
     QEvent,
+    QModelIndex,
 )
-from PySide6.QtGui import QWheelEvent, QPixmap
+from PySide6.QtGui import QWheelEvent, QPixmap, QShowEvent
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -18,23 +20,344 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QComboBox,
     QLabel,
-    QSplitter,
     QProgressBar,
     QMenu,
     QPushButton,
     QScrollArea,
     QFrame,
     QSizePolicy,
+    QStackedWidget,
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from uab.core.models import StandardAsset, AssetStatus
 from uab.ui.delegates import AssetDelegate
+from uab.ui.utils import load_hdri_thumbnail
+
+# Placeholder image path (relative to package)
+_PLACEHOLDER_PATH = Path(
+    __file__).parent.parent.parent.parent / "assets" / "model-placeholder.png"
+
+
+class DetailView(QWidget):
+    """
+    Full-screen detail view for asset inspection.
+
+    Displays a large preview on the left and metadata on the right.
+    Emits signals for user interactions (back, import, download).
+    """
+
+    back_clicked = Signal()
+    import_clicked = Signal(str)  # asset_id
+    download_clicked = Signal(str)  # asset_id
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("detailView")
+        self._current_asset: Optional[StandardAsset] = None
+        self._download_enabled = True
+        self._preview_needs_load = False
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        """Initialize the UI components."""
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Left panel - Preview
+        left_panel = QWidget()
+        left_panel.setObjectName("detailLeftPanel")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(20, 20, 20, 20)
+        left_layout.setSpacing(15)
+
+        # Back button at top
+        self._back_btn = QPushButton("← Back")
+        self._back_btn.setObjectName("backButton")
+        self._back_btn.setMaximumWidth(100)
+        self._back_btn.clicked.connect(self._on_back_clicked)
+        left_layout.addWidget(self._back_btn)
+
+        # Preview image
+        self._preview_label = QLabel()
+        self._preview_label.setObjectName("detailPreviewLarge")
+        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_label.setScaledContents(False)
+        self._preview_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        left_layout.addWidget(self._preview_label, 1)
+
+        main_layout.addWidget(left_panel, 7)
+
+        # Right panel - Metadata
+        right_panel = QWidget()
+        right_panel.setObjectName("detailRightPanel")
+        right_panel.setMinimumWidth(320)
+        right_panel.setMaximumWidth(450)
+
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(20, 20, 20, 20)
+        right_layout.setSpacing(0)
+
+        # Scroll area for metadata
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(15, 15, 15, 15)
+        content_layout.setSpacing(20)
+
+        # Name field
+        name_section = self._create_field_section("Name")
+        self._name_label = name_section["value"]
+        self._name_label.setObjectName("detailNameLabel")
+        content_layout.addLayout(name_section["layout"])
+
+        content_layout.addWidget(self._create_separator())
+
+        # Type field
+        type_section = self._create_field_section("Type")
+        self._type_label = type_section["value"]
+        content_layout.addLayout(type_section["layout"])
+
+        content_layout.addWidget(self._create_separator())
+
+        # Status field
+        status_section = self._create_field_section("Status")
+        self._status_label = status_section["value"]
+        content_layout.addLayout(status_section["layout"])
+
+        content_layout.addWidget(self._create_separator())
+
+        # Source field
+        source_section = self._create_field_section("Source")
+        self._source_label = source_section["value"]
+        content_layout.addLayout(source_section["layout"])
+
+        content_layout.addWidget(self._create_separator())
+
+        # Path field
+        path_section = self._create_field_section("File Path")
+        self._path_label = path_section["value"]
+        self._path_label.setObjectName("detailPathLabel")
+        self._path_container = path_section["layout"]
+        content_layout.addLayout(self._path_container)
+
+        content_layout.addWidget(self._create_separator())
+
+        # Metadata section (for additional info like resolutions, files)
+        metadata_section = self._create_field_section("Details")
+        self._metadata_label = metadata_section["value"]
+        self._metadata_label.setMinimumHeight(60)
+        content_layout.addLayout(metadata_section["layout"])
+
+        content_layout.addStretch()
+
+        scroll_area.setWidget(content_widget)
+        right_layout.addWidget(scroll_area, 1)
+
+        # Action buttons at bottom
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        self._download_btn = QPushButton("Download")
+        self._download_btn.setObjectName("downloadButton")
+        self._download_btn.clicked.connect(self._on_download_clicked)
+        btn_layout.addWidget(self._download_btn)
+
+        self._import_btn = QPushButton("Import")
+        self._import_btn.setObjectName("primaryButton")
+        self._import_btn.clicked.connect(self._on_import_clicked)
+        btn_layout.addWidget(self._import_btn)
+
+        right_layout.addLayout(btn_layout)
+
+        main_layout.addWidget(right_panel, 3)
+
+    def _create_field_section(self, label_text: str) -> dict:
+        """Create a field section with label and value."""
+        layout = QVBoxLayout()
+        layout.setSpacing(5)
+
+        label = QLabel(label_text)
+        label.setProperty("class", "fieldLabel")
+
+        value = QLabel()
+        value.setWordWrap(True)
+        value.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        value.setProperty("class", "fieldValue")
+
+        layout.addWidget(label)
+        layout.addWidget(value)
+
+        return {"layout": layout, "label": label, "value": value}
+
+    def _create_separator(self) -> QFrame:
+        """Create a horizontal separator line."""
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        return sep
+
+    def set_download_enabled(self, enabled: bool) -> None:
+        """Enable or disable download capability."""
+        self._download_enabled = enabled
+
+    def show_asset(self, asset: StandardAsset) -> None:
+        """
+        Display the full details for an asset.
+
+        Args:
+            asset: The asset to display
+        """
+        self._current_asset = asset
+        self._preview_needs_load = True
+
+        # Update labels
+        self._name_label.setText(asset.name)
+        self._type_label.setText(asset.type.value.upper())
+        self._status_label.setText(asset.status.value.upper())
+        self._source_label.setText(asset.source)
+
+        # Path (only show if local)
+        if asset.local_path:
+            self._path_label.setText(str(asset.local_path))
+            self._path_label.setVisible(True)
+        else:
+            self._path_label.setText("Not downloaded")
+            self._path_label.setVisible(True)
+
+        # Build metadata display
+        metadata_parts = []
+        if asset.metadata:
+            if "resolutions" in asset.metadata:
+                resolutions = asset.metadata["resolutions"]
+                if isinstance(resolutions, list):
+                    metadata_parts.append(
+                        f"Resolutions: {', '.join(resolutions)}")
+            if "files" in asset.metadata:
+                files = asset.metadata["files"]
+                if isinstance(files, dict):
+                    metadata_parts.append(f"Files: {len(files)}")
+            if "author" in asset.metadata:
+                metadata_parts.append(f"Author: {asset.metadata['author']}")
+            if "categories" in asset.metadata:
+                cats = asset.metadata["categories"]
+                if isinstance(cats, list):
+                    metadata_parts.append(f"Categories: {', '.join(cats)}")
+
+        self._metadata_label.setText(
+            "\n".join(
+                metadata_parts) if metadata_parts else "No additional details"
+        )
+
+        # Update button states
+        self._download_btn.setVisible(
+            asset.status == AssetStatus.CLOUD and self._download_enabled
+        )
+        self._import_btn.setEnabled(asset.status == AssetStatus.LOCAL)
+
+        # Defer preview loading until widget is shown and laid out
+        QTimer.singleShot(0, self._deferred_load_preview)
+
+    def _deferred_load_preview(self) -> None:
+        """Load preview after widget is laid out."""
+        if self._current_asset and self._preview_needs_load:
+            self._load_preview(self._current_asset)
+            self._preview_needs_load = False
+
+    def _load_preview(self, asset: StandardAsset) -> None:
+        """Load the preview image for the asset."""
+        pixmap = QPixmap()
+
+        # Try thumbnail_path first
+        if asset.thumbnail_path and asset.thumbnail_path.exists():
+            pixmap.load(str(asset.thumbnail_path))
+
+        # Try local_path for various formats
+        if pixmap.isNull() and asset.local_path and asset.local_path.exists():
+            suffix = asset.local_path.suffix.lower()
+            if suffix in (".png", ".jpg", ".jpeg", ".gif", ".bmp"):
+                pixmap.load(str(asset.local_path))
+            elif suffix in (".hdr", ".exr"):
+                # Use HDR loader for high dynamic range images
+                # Use a larger max_size for the detail view
+                hdri_pixmap = load_hdri_thumbnail(
+                    asset.local_path, max_size=1024)
+                if hdri_pixmap:
+                    pixmap = hdri_pixmap
+
+        # Fall back to placeholder if no image loaded
+        if pixmap.isNull() and _PLACEHOLDER_PATH.exists():
+            pixmap.load(str(_PLACEHOLDER_PATH))
+
+        if not pixmap.isNull():
+            # Get available space for preview
+            available_width = self._preview_label.width() - 40
+            available_height = self._preview_label.height() - 40
+
+            # Use reasonable defaults if widget not yet sized
+            if available_width < 100:
+                available_width = 600
+            if available_height < 100:
+                available_height = 400
+
+            scaled = pixmap.scaled(
+                available_width,
+                available_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self._preview_label.setPixmap(scaled)
+            self._preview_label.setProperty("noPreview", False)
+        else:
+            self._preview_label.setText("Preview not available")
+            self._preview_label.setProperty("noPreview", True)
+
+        # Refresh styling
+        self._preview_label.style().unpolish(self._preview_label)
+        self._preview_label.style().polish(self._preview_label)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Handle show event to load preview when widget becomes visible."""
+        super().showEvent(event)
+        # Reload preview when shown (in case size changed)
+        if self._current_asset:
+            QTimer.singleShot(50, self._deferred_load_preview)
+
+    def resizeEvent(self, event) -> None:
+        """Handle resize to update preview scaling."""
+        super().resizeEvent(event)
+        if self._current_asset and self.isVisible():
+            # Debounce resize updates
+            self._preview_needs_load = True
+            QTimer.singleShot(100, self._deferred_load_preview)
+
+    def _on_back_clicked(self) -> None:
+        """Handle back button click."""
+        self.back_clicked.emit()
+
+    def _on_download_clicked(self) -> None:
+        """Handle download button click."""
+        if self._current_asset:
+            self.download_clicked.emit(self._current_asset.id)
+
+    def _on_import_clicked(self) -> None:
+        """Handle import button click."""
+        if self._current_asset:
+            self.import_clicked.emit(self._current_asset.id)
 
 
 class BrowserView(QWidget):
     """
-    Main browser widget containing search, grid view, and detail panel.
+    Main browser widget containing search, grid view, and full-screen detail view.
 
     This is a "dumb" view that emits signals for user interactions.
     The presenter handles all business logic.
@@ -55,6 +378,8 @@ class BrowserView(QWidget):
     import_requested = Signal(str)  # asset_id
     download_requested = Signal(str)  # asset_id
     remove_requested = Signal(str)  # asset_id
+    add_files_requested = Signal()  # request to add individual files
+    add_folder_requested = Signal()  # request to add folder
 
     # Thumbnail base size and zoom constraints
     _BASE_CELL_SIZE = 180
@@ -69,6 +394,7 @@ class BrowserView(QWidget):
         self._download_enabled = True
         self._remove_enabled = True
         self._assets: dict[str, StandardAsset] = {}  # Cache by asset ID
+        self._current_hover_index: Optional[QModelIndex] = None
 
         self._init_ui()
         self._setup_connections()
@@ -79,40 +405,47 @@ class BrowserView(QWidget):
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Stacked widget to switch between grid and detail views
+        self._stack = QStackedWidget()
+
+        # Page 0: Grid view container (toolbar + grid + progress bar)
+        grid_container = QWidget()
+        grid_layout = QVBoxLayout(grid_container)
+        grid_layout.setSpacing(0)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+
         # Toolbar
         self._toolbar = self._create_toolbar()
-        main_layout.addWidget(self._toolbar)
-
-        # Main content area with splitter
-        self._splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._splitter.setChildrenCollapsible(False)
+        grid_layout.addWidget(self._toolbar)
 
         # Grid view
         self._grid = self._create_grid_view()
-        self._splitter.addWidget(self._grid)
-
-        # Detail panel (initially hidden)
-        self._detail_panel = self._create_detail_panel()
-        self._detail_panel.setVisible(False)
-        self._splitter.addWidget(self._detail_panel)
-
-        # Set initial splitter sizes
-        self._splitter.setSizes([1000, 0])
-
-        main_layout.addWidget(self._splitter, 1)
+        grid_layout.addWidget(self._grid, 1)
 
         # Progress bar (hidden by default)
         self._progress_bar = QProgressBar()
         self._progress_bar.setVisible(False)
         self._progress_bar.setTextVisible(True)
         self._progress_bar.setFixedHeight(20)
-        main_layout.addWidget(self._progress_bar)
+        grid_layout.addWidget(self._progress_bar)
 
         # Loading indicator
         self._loading_label = QLabel("Loading...")
         self._loading_label.setObjectName("loadingIndicator")
         self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._loading_label.setVisible(False)
+
+        self._stack.addWidget(grid_container)
+
+        # Page 1: Detail view (full-screen)
+        self._detail_view = DetailView()
+        self._detail_view.back_clicked.connect(self.hide_detail)
+        self._detail_view.import_clicked.connect(self.import_requested.emit)
+        self._detail_view.download_clicked.connect(
+            self.download_requested.emit)
+        self._stack.addWidget(self._detail_view)
+
+        main_layout.addWidget(self._stack)
 
     def _create_toolbar(self) -> QWidget:
         """Create the toolbar with search and filter controls."""
@@ -152,11 +485,25 @@ class BrowserView(QWidget):
         self._renderer_combo = QComboBox()
         self._renderer_combo.setMinimumWidth(120)
 
+        # Add Files button (hidden by default, enabled by presenter for local plugin)
+        self._add_files_btn = QPushButton("Add Files")
+        self._add_files_btn.setObjectName("addFilesButton")
+        self._add_files_btn.setVisible(False)
+        self._add_files_btn.clicked.connect(self.add_files_requested.emit)
+
+        # Add Folder button (hidden by default, enabled by presenter for local plugin)
+        self._add_folder_btn = QPushButton("Add Folder")
+        self._add_folder_btn.setObjectName("addFolderButton")
+        self._add_folder_btn.setVisible(False)
+        self._add_folder_btn.clicked.connect(self.add_folder_requested.emit)
+
         layout.addWidget(self._search_bar, 1)
         layout.addWidget(filter_label)
         layout.addWidget(self._filter_combo)
         layout.addWidget(renderer_label)
         layout.addWidget(self._renderer_combo)
+        layout.addWidget(self._add_files_btn)
+        layout.addWidget(self._add_folder_btn)
         layout.addStretch()
 
         return toolbar
@@ -187,6 +534,7 @@ class BrowserView(QWidget):
         grid.setModel(self._model)
 
         self._delegate = AssetDelegate()
+        self._delegate.set_preview_parent(grid.viewport())
         grid.setItemDelegate(self._delegate)
 
         # Context menu
@@ -196,116 +544,6 @@ class BrowserView(QWidget):
         grid.viewport().installEventFilter(self)
 
         return grid
-
-    def _create_detail_panel(self) -> QWidget:
-        """Create the detail panel for asset inspection."""
-        # TODO: this is just a placeholder split detail panel. Review the prototype's implementation.
-        panel = QWidget()
-        panel.setObjectName("detailPanel")
-        panel.setMinimumWidth(300)
-        panel.setMaximumWidth(400)
-
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
-
-        # Close button at top
-        close_btn = QPushButton("Close")
-        close_btn.setMaximumWidth(60)
-        close_btn.clicked.connect(self.hide_detail)
-        layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
-
-        # Scroll area for content
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setSpacing(10)
-
-        # Preview image
-        self._detail_preview = QLabel()
-        self._detail_preview.setObjectName("detailPreview")
-        self._detail_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._detail_preview.setMinimumHeight(200)
-        self._detail_preview.setScaledContents(False)
-        self._detail_preview.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        content_layout.addWidget(self._detail_preview)
-
-        # Name
-        self._detail_name = QLabel()
-        self._detail_name.setWordWrap(True)
-        self._detail_name.setProperty("class", "fieldValue")
-        self._detail_name.setStyleSheet("font-size: 14pt; font-weight: bold;")
-        content_layout.addWidget(self._detail_name)
-
-        # Separator
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.HLine)
-        content_layout.addWidget(sep1)
-
-        # Type
-        type_label = QLabel("Type")
-        type_label.setProperty("class", "fieldLabel")
-        type_label.setStyleSheet("font-weight: bold; color: #999;")
-        self._detail_type = QLabel()
-        self._detail_type.setProperty("class", "fieldValue")
-        content_layout.addWidget(type_label)
-        content_layout.addWidget(self._detail_type)
-
-        # Status
-        status_label = QLabel("Status")
-        status_label.setProperty("class", "fieldLabel")
-        status_label.setStyleSheet("font-weight: bold; color: #999;")
-        self._detail_status = QLabel()
-        self._detail_status.setProperty("class", "fieldValue")
-        content_layout.addWidget(status_label)
-        content_layout.addWidget(self._detail_status)
-
-        # Source
-        source_label = QLabel("Source")
-        source_label.setProperty("class", "fieldLabel")
-        source_label.setStyleSheet("font-weight: bold; color: #999;")
-        self._detail_source = QLabel()
-        self._detail_source.setProperty("class", "fieldValue")
-        content_layout.addWidget(source_label)
-        content_layout.addWidget(self._detail_source)
-
-        # Path (for local assets)
-        path_label = QLabel("Path")
-        path_label.setProperty("class", "fieldLabel")
-        path_label.setStyleSheet("font-weight: bold; color: #999;")
-        self._detail_path = QLabel()
-        self._detail_path.setProperty("class", "fieldValueMuted")
-        self._detail_path.setWordWrap(True)
-        content_layout.addWidget(path_label)
-        content_layout.addWidget(self._detail_path)
-
-        content_layout.addStretch()
-
-        scroll.setWidget(content)
-        layout.addWidget(scroll, 1)
-
-        # Action buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-
-        self._detail_download_btn = QPushButton("Download")
-        self._detail_download_btn.clicked.connect(self._on_detail_download)
-        btn_layout.addWidget(self._detail_download_btn)
-
-        self._detail_import_btn = QPushButton("Import")
-        self._detail_import_btn.setObjectName("primaryButton")
-        self._detail_import_btn.clicked.connect(self._on_detail_import)
-        btn_layout.addWidget(self._detail_import_btn)
-
-        layout.addLayout(btn_layout)
-
-        return panel
 
     def _setup_connections(self) -> None:
         """Connect internal signals and slots."""
@@ -320,9 +558,7 @@ class BrowserView(QWidget):
         self._grid.doubleClicked.connect(self._on_item_double_clicked)
         self._grid.customContextMenuRequested.connect(self._show_context_menu)
 
-    # -------------------------------------------------------------------------
-    # Public API
-    # -------------------------------------------------------------------------
+    # PUBLIC API
 
     def set_items(self, assets: list[StandardAsset]) -> None:
         """
@@ -351,10 +587,16 @@ class BrowserView(QWidget):
     def set_download_enabled(self, enabled: bool) -> None:
         """Enable or disable download capability."""
         self._download_enabled = enabled
+        self._detail_view.set_download_enabled(enabled)
 
     def set_remove_enabled(self, enabled: bool) -> None:
         """Enable or disable remove capability."""
         self._remove_enabled = enabled
+
+    def set_add_assets_enabled(self, enabled: bool) -> None:
+        """Show or hide the Add Files and Add Folder buttons."""
+        self._add_files_btn.setVisible(enabled)
+        self._add_folder_btn.setVisible(enabled)
 
     def set_loading(self, loading: bool) -> None:
         """Show or hide the loading indicator."""
@@ -398,49 +640,29 @@ class BrowserView(QWidget):
 
     def show_detail(self, asset: StandardAsset) -> None:
         """
-        Display the detail panel for an asset.
+        Display the full-screen detail view for an asset.
 
         Args:
             asset: The asset to display details for
         """
-        # TODO: this is just a placeholder. Review the prototype's implementation.
+        # Hide preview popup when switching to detail view
+        self._delegate.hide_preview()
+        self._current_hover_index = None
+
         self._current_detail_asset = asset
-
-        # Update detail panel content
-        self._detail_name.setText(asset.name)
-        self._detail_type.setText(asset.type.value.upper())
-        self._detail_status.setText(asset.status.value.upper())
-        self._detail_source.setText(asset.source)
-
-        if asset.local_path:
-            self._detail_path.setText(str(asset.local_path))
-            self._detail_path.setVisible(True)
-        else:
-            self._detail_path.setVisible(False)
-
-        # Update button states
-        self._detail_download_btn.setVisible(
-            asset.status == AssetStatus.CLOUD and self._download_enabled
-        )
-        self._detail_import_btn.setEnabled(asset.status == AssetStatus.LOCAL)
-
-        # Load preview image
-        self._load_detail_preview(asset)
-
-        # Show panel with animation
-        if not self._detail_panel.isVisible():
-            self._detail_panel.setVisible(True)
-            self._splitter.setSizes([700, 300])
+        self._detail_view.show_asset(asset)
+        self._stack.setCurrentIndex(1)
 
     def hide_detail(self) -> None:
-        """Hide the detail panel."""
-        self._detail_panel.setVisible(False)
-        self._splitter.setSizes([1000, 0])
+        """Hide the detail view and return to grid."""
+        self._stack.setCurrentIndex(0)
         self._current_detail_asset = None
 
-    # -------------------------------------------------------------------------
-    # Internal methods
-    # -------------------------------------------------------------------------
+    def is_detail_visible(self) -> bool:
+        """Check if the detail view is currently shown."""
+        return self._stack.currentIndex() == 1
+
+    # INTERNAL METHODS
 
     def _show_empty_state(self) -> None:
         """Display empty state placeholder."""
@@ -468,6 +690,10 @@ class BrowserView(QWidget):
 
     def _show_context_menu(self, pos) -> None:
         """Show context menu for the item at position."""
+        # Hide preview popup when showing context menu
+        self._delegate.hide_preview()
+        self._current_hover_index = None
+
         # TODO: this is just a placeholder. Review the prototype's implementation. Options need to change per-environment and asset status.
         index = self._grid.indexAt(pos)
         if not index.isValid():
@@ -517,42 +743,12 @@ class BrowserView(QWidget):
 
         menu.exec(self._grid.viewport().mapToGlobal(pos))
 
-    def _on_detail_download(self) -> None:
-        """Handle download button click in detail panel."""
-        if hasattr(self, "_current_detail_asset") and self._current_detail_asset:
-            self.download_requested.emit(self._current_detail_asset.id)
-
-    def _on_detail_import(self) -> None:
-        """Handle import button click in detail panel."""
-        if hasattr(self, "_current_detail_asset") and self._current_detail_asset:
-            self.import_requested.emit(self._current_detail_asset.id)
-
-    def _load_detail_preview(self, asset: StandardAsset) -> None:
-        """Load the preview image for the detail panel."""
-        pixmap = QPixmap()
-
-        # Try thumbnail_path first, then thumbnail_url
-        if asset.thumbnail_path and asset.thumbnail_path.exists():
-            pixmap.load(str(asset.thumbnail_path))
-        elif asset.local_path and asset.local_path.exists():
-            # Try to load from local path for image assets
-            if asset.local_path.suffix.lower() in (".png", ".jpg", ".jpeg"):
-                pixmap.load(str(asset.local_path))
-
-        if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                self._detail_preview.width() - 20,
-                200,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self._detail_preview.setPixmap(scaled)
-        else:
-            self._detail_preview.setText("No preview available")
-            self._detail_preview.setProperty("noPreview", True)
-
     def _handle_zoom(self, event: QWheelEvent) -> None:
         """Handle Ctrl+wheel zoom."""
+        # Hide preview when zooming as item positions change
+        self._delegate.hide_preview()
+        self._current_hover_index = None
+
         delta = event.angleDelta().y() / 240.0
         factor_change = 1.0 + delta * 0.2
         new_scale = max(
@@ -575,17 +771,47 @@ class BrowserView(QWidget):
                 if wheel_event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                     self._handle_zoom(wheel_event)
                     return True
+                else:
+                    # Hide preview on regular scroll as item positions change
+                    self._delegate.hide_preview()
+                    self._current_hover_index = None
             elif event.type() == QEvent.Type.MouseMove:
-                # Track hover for delegate
+                # Track hover for delegate and preview popup
                 pos = event.pos()
                 index = self._grid.indexAt(pos)
+
                 if index.isValid():
                     self._delegate.set_hovered_index(index)
+
+                    # Check if we moved to a different item
+                    if (
+                        self._current_hover_index is None
+                        or self._current_hover_index != index
+                    ):
+                        # Left previous item
+                        if self._current_hover_index is not None:
+                            self._delegate.on_item_hover_leave()
+
+                        # Entered new item
+                        self._current_hover_index = index
+                        item_rect = self._grid.visualRect(index)
+                        global_pos = self._grid.viewport().mapToGlobal(pos)
+                        self._delegate.on_item_hover_enter(
+                            index, item_rect, global_pos
+                        )
                 else:
                     self._delegate.set_hovered_index(None)
+                    # Left item area
+                    if self._current_hover_index is not None:
+                        self._delegate.on_item_hover_leave()
+                        self._current_hover_index = None
+
                 self._grid.viewport().update()
             elif event.type() == QEvent.Type.Leave:
-                # Clear hover when mouse leaves
+                # Clear hover when mouse leaves viewport
                 self._delegate.set_hovered_index(None)
+                if self._current_hover_index is not None:
+                    self._delegate.on_item_hover_leave()
+                    self._current_hover_index = None
                 self._grid.viewport().update()
         return super().eventFilter(obj, event)
