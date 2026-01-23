@@ -249,56 +249,40 @@ BrowserView QListView::item:selected {
 }
 
 /* ============================================
-   Detail Panel
+   Detail View (Full-screen)
    ============================================ */
 
-#detailPanel {
+#detailView {
+    background-color: #1e1e1e;
+}
+
+#detailLeftPanel {
+    background-color: #1e1e1e;
+}
+
+#detailRightPanel {
     background-color: #1e1e1e;
     border-left: 2px solid #3d3d3d;
 }
 
-#detailPanel QScrollArea {
+#detailRightPanel QScrollArea {
     border: none;
     background-color: transparent;
 }
 
-#detailPreview {
+#detailPreviewLarge {
     border: 1px solid #333333;
     background-color: #0a0a0a;
     border-radius: 4px;
 }
 
-#detailPreview[noPreview="true"] {
+#detailPreviewLarge[noPreview="true"] {
     color: #666666;
     font-size: 14pt;
 }
 
-/* Detail panel labels */
-#detailPanel .fieldLabel {
-    font-weight: bold;
-    font-size: 11pt;
-    color: #999999;
-}
-
-#detailPanel .fieldValue {
-    color: #e0e0e0;
-    padding: 5px;
-    font-size: 11pt;
-}
-
-#detailPanel .fieldValueMuted {
-    color: #888888;
-    padding: 5px;
-    font-size: 10pt;
-}
-
-/* Detail panel separators */
-#detailPanel QFrame[frameShape="4"] {
-    color: #333333;
-}
-
-/* Detail panel buttons */
-#detailPanel QPushButton {
+/* Back button */
+#backButton {
     background-color: #2d2d2d;
     color: #e0e0e0;
     border: 2px solid #3d3d3d;
@@ -307,25 +291,87 @@ BrowserView QListView::item:selected {
     font-size: 10pt;
 }
 
-#detailPanel QPushButton:hover {
+#backButton:hover {
     background-color: #3d3d3d;
     border: 2px solid #4d4d4d;
 }
 
-#detailPanel QPushButton:pressed {
+#backButton:pressed {
     background-color: #4a9eff;
     border: 2px solid #4a9eff;
 }
 
-#detailPanel QPushButton#primaryButton {
+/* Detail view name label */
+#detailNameLabel {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #e0e0e0;
+    padding: 5px;
+}
+
+/* Detail view path label */
+#detailPathLabel {
+    color: #888888;
+    font-size: 10pt;
+    padding: 5px;
+}
+
+/* Detail view field labels */
+#detailView .fieldLabel,
+#detailRightPanel .fieldLabel {
+    font-weight: bold;
+    font-size: 11pt;
+    color: #999999;
+}
+
+#detailView .fieldValue,
+#detailRightPanel .fieldValue {
+    color: #e0e0e0;
+    padding: 5px;
+    font-size: 11pt;
+}
+
+/* Detail view separators */
+#detailRightPanel QFrame[frameShape="4"] {
+    color: #333333;
+}
+
+/* Detail view buttons */
+#detailRightPanel QPushButton {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border: 2px solid #3d3d3d;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 10pt;
+    min-width: 80px;
+}
+
+#detailRightPanel QPushButton:hover {
+    background-color: #3d3d3d;
+    border: 2px solid #4d4d4d;
+}
+
+#detailRightPanel QPushButton:pressed {
+    background-color: #4a9eff;
+    border: 2px solid #4a9eff;
+}
+
+#detailRightPanel QPushButton#primaryButton {
     background-color: #4a9eff;
     border: 2px solid #4a9eff;
     color: #ffffff;
 }
 
-#detailPanel QPushButton#primaryButton:hover {
+#detailRightPanel QPushButton#primaryButton:hover {
     background-color: #5aafff;
     border: 2px solid #5aafff;
+}
+
+#detailRightPanel QPushButton#primaryButton:disabled {
+    background-color: #3d3d3d;
+    border: 2px solid #3d3d3d;
+    color: #666666;
 }
 
 /* ============================================
