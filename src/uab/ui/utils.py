@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 import OpenEXR
 import Imath
-import imageio.v3 as iio
+import imageio  # Use legacy API for better compatibility
 
 
 def load_hdri_thumbnail(path: Path, max_size: int = 256) -> Optional[QPixmap]:
@@ -44,8 +44,8 @@ def _load_hdr_file(path: Path, max_size: int) -> Optional[QPixmap]:
     try:
         # Try imageio first (best HDR support)
         try:
-            hdr_data = iio.imread(str(path))
-        except ImportError:
+            hdr_data = imageio.imread(str(path))
+        except Exception:
             # Fallback: read raw HDR manually
             hdr_data = _read_hdr_manual(path)
             if hdr_data is None:
