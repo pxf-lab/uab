@@ -1,7 +1,8 @@
 """Browser view for Universal Asset Browser."""
 
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtCore import (
     Qt,
@@ -11,7 +12,7 @@ from PySide6.QtCore import (
     QEvent,
     QModelIndex,
 )
-from PySide6.QtGui import QWheelEvent, QPixmap, QShowEvent
+from PySide6.QtGui import QMouseEvent, QWheelEvent, QPixmap, QShowEvent
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -30,7 +31,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
-from uab.core.models import StandardAsset, AssetStatus
+from uab.core.models import AssetType, StandardAsset, AssetStatus
 from uab.ui.delegates import AssetDelegate
 from uab.ui.utils import load_hdri_thumbnail
 
@@ -380,6 +381,10 @@ class BrowserView(QWidget):
     remove_requested = Signal(str)  # asset_id
     add_files_requested = Signal()  # request to add individual files
     add_folder_requested = Signal()  # request to add folder
+    # asset_id - create new node (Cmd/Ctrl+Click)
+    new_asset_requested = Signal(str)
+    # asset_id - replace selected node (Opt/Alt+Click)
+    replace_asset_requested = Signal(str)
 
     # Thumbnail base size and zoom constraints
     _BASE_CELL_SIZE = 180
@@ -395,6 +400,11 @@ class BrowserView(QWidget):
         self._remove_enabled = True
         self._assets: dict[str, StandardAsset] = {}  # Cache by asset ID
         self._current_hover_index: Optional[QModelIndex] = None
+
+        # Host-specific action configuration
+        self._replace_enabled = False
+        self._get_node_label: Callable[[
+            AssetType], str] = lambda t: t.value.title()
 
         self._init_ui()
         self._setup_connections()
@@ -598,6 +608,23 @@ class BrowserView(QWidget):
         self._add_files_btn.setVisible(enabled)
         self._add_folder_btn.setVisible(enabled)
 
+    def set_host_actions(
+        self,
+        replace_enabled: bool,
+        get_label: Callable[[AssetType], str] | None = None,
+    ) -> None:
+        """
+        Configure host-specific context menu actions.
+
+        Args:
+            replace_enabled: Whether the "Replace" action should be shown
+                (only available in hosts that support node selection)
+            get_label: Callable that returns a label for an asset type
+                (e.g., "Environment Light" for HDRI). If None, uses default labels.
+        """
+        self._replace_enabled = replace_enabled
+        self._get_node_label = get_label or (lambda t: t.value.title())
+
     def set_loading(self, loading: bool) -> None:
         """Show or hide the loading indicator."""
         self._loading_label.setVisible(loading)
@@ -694,7 +721,6 @@ class BrowserView(QWidget):
         self._delegate.hide_preview()
         self._current_hover_index = None
 
-        # TODO: this is just a placeholder. Review the prototype's implementation. Options need to change per-environment and asset status.
         index = self._grid.indexAt(pos)
         if not index.isValid():
             return
@@ -704,6 +730,14 @@ class BrowserView(QWidget):
             return
 
         menu = QMenu(self)
+
+        # Platform-specific hotkey hints
+        is_mac = sys.platform == "darwin"
+        cmd_hint = "⌘ Click" if is_mac else "Ctrl+Click"
+        alt_hint = "⌥ Click" if is_mac else "Alt+Click"
+
+        # Get the node label for this asset type (e.g., "Environment Light", "Material")
+        node_label = self._get_node_label(asset.type)
 
         # Status-dependent actions
         if asset.status == AssetStatus.CLOUD:
@@ -719,10 +753,19 @@ class BrowserView(QWidget):
             )
 
         elif asset.status == AssetStatus.LOCAL:
-            import_action = menu.addAction("Import")
-            import_action.triggered.connect(
-                lambda: self.import_requested.emit(asset.id)
+            # New <asset> action with hotkey hint
+            new_action = menu.addAction(f"New {node_label}\t{cmd_hint}")
+            new_action.triggered.connect(
+                lambda: self.new_asset_requested.emit(asset.id)
             )
+
+            # Replace <asset> action (only if host supports it)
+            if self._replace_enabled:
+                replace_action = menu.addAction(
+                    f"Replace {node_label}\t{alt_hint}")
+                replace_action.triggered.connect(
+                    lambda: self.replace_asset_requested.emit(asset.id)
+                )
 
             if self._remove_enabled:
                 menu.addSeparator()
@@ -742,6 +785,54 @@ class BrowserView(QWidget):
         )
 
         menu.exec(self._grid.viewport().mapToGlobal(pos))
+
+    def _handle_modifier_click(self, event: QMouseEvent) -> bool:
+        """
+        Handle modifier+click hotkeys for quick actions.
+
+        Hotkeys:
+        - macOS: Cmd+Click (New), Opt+Click (Replace)
+        - Windows/Linux: Ctrl+Click (New), Alt+Click (Replace)
+
+        Args:
+            event: The mouse event
+
+        Returns:
+            True if the event was handled, False otherwise
+        """
+        modifiers = event.modifiers()
+        pos = event.pos()
+        index = self._grid.indexAt(pos)
+
+        if not index.isValid():
+            return False
+
+        asset: StandardAsset = index.data(Qt.ItemDataRole.UserRole)
+        if not asset:
+            return False
+
+        # Only handle local assets (can't create/replace with cloud assets directly)
+        if asset.status != AssetStatus.LOCAL:
+            return False
+
+        # Qt swaps Ctrl/Meta on macOS by default, so ControlModifier maps to:
+        # - macOS: Command key (⌘)
+        # - Windows/Linux: Ctrl key
+        # This gives us consistent cross-platform behavior.
+
+        # Cmd/Ctrl+Click: New asset
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            self._delegate.hide_preview()
+            self.new_asset_requested.emit(asset.id)
+            return True
+
+        # Opt/Alt+Click: Replace asset (only if enabled)
+        if modifiers & Qt.KeyboardModifier.AltModifier and self._replace_enabled:
+            self._delegate.hide_preview()
+            self.replace_asset_requested.emit(asset.id)
+            return True
+
+        return False
 
     def _handle_zoom(self, event: QWheelEvent) -> None:
         """Handle Ctrl+wheel zoom."""
@@ -764,9 +855,16 @@ class BrowserView(QWidget):
             self._delegate.set_cell_size(new_size)
 
     def eventFilter(self, obj, event: QEvent) -> bool:
-        """Filter events for Ctrl+wheel zoom and hover tracking on grid viewport."""
+        """Filter events for modifier+click, Ctrl+wheel zoom, and hover tracking."""
         if obj == self._grid.viewport():
-            if event.type() == QEvent.Type.Wheel:
+            if event.type() == QEvent.Type.MouseButtonPress:
+                mouse_event: QMouseEvent = event
+                if mouse_event.button() == Qt.MouseButton.LeftButton:
+                    # Check for modifier+click hotkeys
+                    handled = self._handle_modifier_click(mouse_event)
+                    if handled:
+                        return True
+            elif event.type() == QEvent.Type.Wheel:
                 wheel_event: QWheelEvent = event
                 if wheel_event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                     self._handle_zoom(wheel_event)

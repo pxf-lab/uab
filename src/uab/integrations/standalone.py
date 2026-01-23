@@ -83,3 +83,12 @@ class StandaloneIntegration(HostIntegration):
             "arnold" as the default renderer
         """
         return "arnold"
+
+    @property
+    def supports_replace_selection(self) -> bool:
+        """
+        Standalone mode does not support node replacement.
+
+        The "Replace" context menu action will not be shown in standalone mode.
+        """
+        return False

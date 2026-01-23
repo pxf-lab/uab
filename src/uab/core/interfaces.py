@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from uab.core.models import StandardAsset
+from uab.core.models import AssetType, StandardAsset
 
 
 class Plugin:
@@ -244,6 +244,33 @@ class HostIntegration(ABC):
             Renderer identifier (e.g., "arnold", "redshift", "karma")
         """
         ...
+
+    @property
+    def supports_replace_selection(self) -> bool:
+        """
+        Whether this host supports replacing/updating a selected node.
+
+        When True, the context menu will show a "Replace <asset>" option
+        that calls update_selection() on the currently selected node.
+
+        Returns:
+            True if the host supports node replacement, False otherwise.
+        """
+        return False
+
+    def get_node_label_for_asset_type(self, asset_type: AssetType) -> str:
+        """
+        Return the host-specific node label for an asset type.
+
+        Used in context menu labels like "New Environment Light" or "Replace Material".
+
+        Args:
+            asset_type: The type of asset (HDRI, TEXTURE, MODEL)
+
+        Returns:
+            Human-readable label (e.g., "Environment Light", "Material", "Geometry")
+        """
+        return asset_type.value.title()
 
 
 class RenderStrategy(ABC):

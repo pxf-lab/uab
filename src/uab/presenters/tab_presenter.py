@@ -223,6 +223,12 @@ class TabPresenter(QObject):
 
         self._setup_connections()
 
+        # Configure host-specific context menu actions
+        self._view.set_host_actions(
+            replace_enabled=self._host.supports_replace_selection,
+            get_label=self._host.get_node_label_for_asset_type,
+        )
+
         # Handle local asset library tab
         if isinstance(plugin, SupportsLocalImport):
             self._view.set_add_assets_enabled(True)
@@ -240,6 +246,9 @@ class TabPresenter(QObject):
         self._view.import_requested.connect(self._on_import_requested)
         self._view.download_requested.connect(self._on_download_requested)
         self._view.remove_requested.connect(self._on_remove_requested)
+        self._view.new_asset_requested.connect(self._on_new_asset_requested)
+        self._view.replace_asset_requested.connect(
+            self._on_replace_asset_requested)
 
     def _trigger_initial_search(self) -> None:
         """Trigger an initial empty search to populate the view."""
@@ -448,6 +457,37 @@ class TabPresenter(QObject):
             return
 
         self._run_async(self._do_import(asset))
+
+    @Slot(str)
+    def _on_new_asset_requested(self, asset_id: str) -> None:
+        """
+        Handle new asset request (Cmd/Ctrl+Click in context menu).
+
+        Creates a new node for the asset. This is functionally the same
+        as import but with explicit naming for the context menu action.
+        """
+        self._on_import_requested(asset_id)
+
+    @Slot(str)
+    def _on_replace_asset_requested(self, asset_id: str) -> None:
+        """
+        Handle replace asset request (Opt/Alt+Click in context menu).
+
+        Updates the currently selected node with the new asset data.
+        Only available in hosts that support node selection (e.g., Houdini).
+        """
+        asset = self._asset_cache.get(asset_id)
+        if not asset:
+            logger.warning(f"Asset not found for replace: {asset_id}")
+            return
+
+        try:
+            self.status_message.emit(f"Replacing with {asset.name}...")
+            self._host.update_selection(asset)
+            self.status_message.emit(f"Replaced with {asset.name}")
+        except Exception as e:
+            logger.error(f"Replace failed: {e}")
+            self.status_message.emit(f"Replace failed: {e}")
 
     async def _do_import(self, asset: StandardAsset) -> None:
         """Execute import asynchronously."""
