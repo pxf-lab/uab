@@ -9,13 +9,13 @@ Plugins auto-register via __init_subclass__ when imported.
 """
 
 # Import plugins to trigger auto-registration
-from uab.plugins.base import BaseAssetLibraryConcretePlugin
+from uab.plugins.base import SharedAssetLibraryUtils
 from uab.plugins.mock import MockPlugin
 from uab.plugins.local import LocalLibraryPlugin
 from uab.plugins.polyhaven import PolyHavenPlugin
 
 __all__ = [
-    "BaseAssetLibraryConcretePlugin",
+    "SharedAssetLibraryUtils",
     "MockPlugin",
     "LocalLibraryPlugin",
     "PolyHavenPlugin",
