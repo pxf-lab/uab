@@ -23,7 +23,9 @@ If there's a DCC, renderer, or library you think should be integrated but cannot
 
 > [!IMPORTANT]
 > These are temporary development instructions. An installer is planned.
-> Currently, the UAB is only tested for MacOS, but may also work on Windows and Linux.
+
+> [!WARNING]
+> This application is only tested on MacOS. It may work on Windows and Linux (I've done my best to consider OS-specific decisions), but no guarantees.
 
 Check out the `examples` directory for my current Houdini config.
 
