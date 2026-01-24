@@ -1,0 +1,9 @@
+{
+    "env": [
+      {
+        "PYTHONPATH": "/Users/dev/Projects/uab/src"
+      }
+    ],
+    "hpath": "$HOUDINI_USER_PREF_DIR/packages/uab"
+  }
+  

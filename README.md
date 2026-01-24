@@ -25,6 +25,8 @@ If there's a DCC, renderer, or library you think should be integrated but cannot
 > These are temporary development instructions. An installer is planned.
 > Currently, the UAB is only tested for MacOS, but may also work on Windows and Linux.
 
+Check out the `examples` directory for my current Houdini config.
+
 - Desktop:
     1. Clone the repo and navigate to its root.
     2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).

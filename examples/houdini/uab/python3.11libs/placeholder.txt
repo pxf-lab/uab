@@ -1,0 +1,3 @@
+This directory is where all of the dependencies for the UAB live.
+
+See the README for instructions on how to export them from the provided `requirements.txt` file. Once exported, they should be moved here.
