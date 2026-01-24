@@ -59,8 +59,11 @@ Check out the `examples` directory for my current Houdini config.
     "hpath": "$HOUDINI_USER_PREF_DIR/packages/uab_v1"
     }
     ```
-5. Create a directory named `python_panels` and a `uab_interface.pypanel` file in the `uab` directory.
-6. Copy the following to `uab_interface.pypanel`:
+5. In the `uab` directory, create a directory named `python_panels` and a directory named `python3.11libs`.
+    > [!WARNING]
+    > These names must match exactly, otherwise Houdini won't import them.
+6. In `python_panels`, create a new file named `uab_interface.pypanel`.
+7. Copy the following to `uab_interface.pypanel`:
     ```xml
     <?xml version="1.0" encoding="UTF-8" ?>
     <pythonPanelDocument>
@@ -91,8 +94,8 @@ Check out the `examples` directory for my current Houdini config.
     </interface>
     </pythonPanelDocument>
     ```
-7. Create a directory named `python3.11libs` and copy the contents of `deps` to it.
-8. Create a new pane in Houdini and select "Universal Asset Browser".
+8. Move the contents of the earlier `deps` directory to the new `python_panels` directory.
+9. Create a new pane in Houdini and select "Universal Asset Browser".
 
 # Key Architectural Concepts
 
