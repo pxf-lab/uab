@@ -19,6 +19,10 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 
 If there's a DCC, renderer, or library you think should be integrated but cannot integrate yourself, or you have a feature request or want to get in touch for another reason, please reach out to me at ben@utdallas.edu.
 
+## Demo
+
+[Short video demo of Universal Asset Browser](./assets/demos/uab_jan2025_demo.mp4)
+
 # Installation
 
 > [!IMPORTANT]
