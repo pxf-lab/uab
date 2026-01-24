@@ -38,7 +38,7 @@ Check out the `examples` directory for my current Houdini config.
     uv run main.py
     ```
 
-##  Houdini:
+##  Houdini 21:
 1. Clone the repo and navigate to its root.
 2. Export the dependencies.
     ```bash
@@ -59,11 +59,7 @@ Check out the `examples` directory for my current Houdini config.
     "hpath": "$HOUDINI_USER_PREF_DIR/packages/uab_v1"
     }
     ```
-5. In the `uab` directory, create a directory named `python_panels` and a directory named `python3.11libs`.
-
-    > [!WARNING]
-    > These names must match exactly, otherwise Houdini won't import them.
-    
+5. In the `uab` directory, create a directory named `python_panels` and a directory named `python3.11libs`. Note that these names must match exactly for Houdini to import their contents.
 6. In `python_panels`, create a new file named `uab_interface.pypanel`.
 7. Copy the following to `uab_interface.pypanel`:
     ```xml
