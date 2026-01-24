@@ -5,7 +5,6 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 | - | - | - |
 | Houdini | Karma | Done
 | Houdini | Redshift | In progress
-| Houdini | Arnold | In progress
 | Blender | Cycles | Planned
 | Unreal Engine 5 | Unreal Engine Renderer | Planned
 | Maya | Arnold | Planned
@@ -18,46 +17,77 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 | Fab/Megascans | Depends on TOS
 | CGTrader | Depends on TOS
 
+If there's a DCC, renderer, or library you think should be integrated but cannot integrate yourself, or you have a feature request or want to get in touch for another reason, please reach out to me at ben@utdallas.edu.
+
 # Installation
+
+> [!IMPORTANT]
+> These are temporary development instructions. An installer is planned.
+> Currently, the UAB is only tested for MacOS, but may also work on Windows and Linux.
+
 - Desktop:
-    1. Clone the repo.
-    2. Install it to a Python interpreter.
-    3. Execute the package.
+    1. Clone the repo and navigate to its root.
+    2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+    3. Execute
+        ```bash
+        cd src/uab
+        uv run main.py
+        ```
 
 - Houdini:
-    1. Clone the repo.
-    2. Install it to a new Python interpreter.
+    1. Clone the repo and navigate to its root.
+    2. Export the dependencies.
+        ```bash
+        cd src/uab
+        pip download -r requirements.txt --dest deps
+        ```
+        This is necessary because Houdini's Python interpreter needs access to the dependencies of this package.
+
     3. Create a directory named `uab` and a `uab.json` file in `$HOUDINI_USER_PREF_DIR/packages`.
-    4. Copy the following to `uab.json`:
+    4. Copy the following to `uab.json` and replace the `PYTHONPATH` with the path to the `src` directory of the repo:
         ```json
         {
-            "hpath": "$HOUDINI_USER_PREF_DIR/packages/uab"
+        "env": [
+            {
+            "PYTHONPATH": "path to src directory of UAB"
+            }
+        ],
+        "hpath": "$HOUDINI_USER_PREF_DIR/packages/uab_v1"
         }
         ```
     5. Create a directory named `python_panels` and a `uab_interface.pypanel` file in the `uab` directory.
     6. Copy the following to `uab_interface.pypanel`:
         ```xml
-        <?xml version="1.0" encoding="UTF-8"?>
+        <?xml version="1.0" encoding="UTF-8" ?>
         <pythonPanelDocument>
         <!-- This file contains definitions of Python interfaces and the
         interfaces menu.  It should not be hand-edited when it is being
         used by the application.  Note, that two definitions of the
         same interface or of the interfaces menu are not allowed
         in a single file. -->
-        <interface name="uab_interface" label="Universal Asset Browser" icon="MISC_python" showNetworkNavigationBar="false" help_url="">
-            <script><![CDATA[
+        <interface
+                name="uab_interface"
+                label="Universal Asset Browser"
+                icon="MISC_python"
+                showNetworkNavigationBar="false"
+                help_url=""
+            >
+            <script
+                ><![CDATA[
         def onCreateInterface():
-            import uab.runner
-            return uab.runner.run()
+            from uab.main import create_panel_widget
+            from uab.integrations.houdini import HoudiniIntegration
+
+            return create_panel_widget(host_integration=HoudiniIntegration())
 
         ]]></script>
-            <includeInPaneTabMenu menu_position="0" create_separator="true"/>
-            <includeInToolbarMenu menu_position="212" create_separator="false"/>
+            <includeInPaneTabMenu menu_position="0" create_separator="true" />
+            <includeInToolbarMenu menu_position="212" create_separator="false" />
             <help><![CDATA[]]></help>
         </interface>
         </pythonPanelDocument>
         ```
-    7. Create a directory named `python3.11libs` and copy the contents of the interpreter's `site_packages` to it.
+    7. Create a directory named `python3.11libs` and copy the contents of `deps` to it.
     8. Create a new pane in Houdini and select "Universal Asset Browser".
 
 # Key Architectural Concepts
