@@ -21,7 +21,7 @@ If there's a DCC, renderer, or library you think should be integrated but cannot
 
 ## Demo
 
-https://github.com/user-attachments/assets/072caa62-d0e8-43e7-b20e-7d11653c5f69
+![Short video demo of the Universal Asset Browser](https://github.com/pxf-lab/uab-assets/blob/main/uab_jan2025_demo.gif)
 
 # Installation
 
