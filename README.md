@@ -97,7 +97,7 @@ Check out the `examples` directory for my current Houdini config.
 ## `MainPresenter`
 Application shell. Acts as a router between `TabPresenter`s. 
 
-## `TabPresenter`:
+## `TabPresenter`
 Handles business logic between a browser, an asset library, and a host.
 
 ## Hosts
