@@ -168,7 +168,12 @@ def _load_hdr_file(path: Path, max_size: int) -> Optional[QPixmap]:
 
         # Resize if needed
         if max(ldr_img.size) > max_size:
-            ldr_img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            # Houdini's Pillow version doesn't have the Resampling enum, so we use the constant if Image.Resampling is not available
+            try:
+                resampling = Image.Resampling.LANCZOS
+            except AttributeError:
+                resampling = Image.LANCZOS
+            ldr_img.thumbnail((max_size, max_size), resampling)
 
         # Convert to QPixmap
         return _pil_to_qpixmap(ldr_img)
@@ -330,7 +335,12 @@ def _load_exr_file(path: Path, max_size: int) -> Optional[QPixmap]:
 
         # Resize if needed
         if max(ldr_img.size) > max_size:
-            ldr_img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            # Houdini's Pillow version doesn't have the Resampling enum, so we use the constant if Image.Resampling is not available
+            try:
+                resampling = Image.Resampling.LANCZOS
+            except AttributeError:
+                resampling = Image.LANCZOS
+            ldr_img.thumbnail((max_size, max_size), resampling)
 
         return _pil_to_qpixmap(ldr_img)
 
