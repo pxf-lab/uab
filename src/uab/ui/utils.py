@@ -74,6 +74,36 @@ class ThumbnailLoaderBase(QThread):
         raise NotImplementedError("Subclasses must implement _process_item")
 
 
+class LocalImageLoader(ThumbnailLoaderBase):
+    """
+    Background worker thread for loading local image thumbnails.
+
+    Handles slow-loading formats like HDR/EXR files by processing them
+    in a background thread. Emits signals when thumbnails are ready so
+    the main thread can update the UI safely.
+    """
+
+    thumbnail_loaded = Signal(str, QPixmap)  # asset_id, pixmap
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def _process_item(self, item: tuple[str, Path, int]) -> None:
+        """
+        Process a single image file by loading its thumbnail.
+
+        Args:
+            item: Tuple of (asset_id, path, max_size)
+        """
+        asset_id, path, max_size = item
+
+        suffix = path.suffix.lower()
+        if suffix in (".hdr", ".exr"):
+            pixmap = load_hdri_thumbnail(path, max_size)
+            if pixmap:
+                self.thumbnail_loaded.emit(asset_id, pixmap)
+
+
 def load_hdri_thumbnail(path: Path, max_size: int = 256) -> Optional[QPixmap]:
     """
     Load an HDR/EXR file and convert to a viewable QPixmap thumbnail.
