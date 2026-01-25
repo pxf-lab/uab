@@ -157,8 +157,22 @@ def _load_hdr_file(path: Path, max_size: int) -> Optional[QPixmap]:
         # Ensure float32
         hdr_data = np.array(hdr_data, dtype=np.float32)
 
-        # Experimentally good values for hdr files
-        ldr_data = _tone_map_reinhard(hdr_data, 1.0, 0.02)
+        # adaptive exposure based on data range
+        luminance = 0.2126 * hdr_data[:, :, 0] + 0.7152 * hdr_data[:, :, 1] + 0.0722 * hdr_data[:, :, 2]
+        median_lum = np.median(luminance[luminance > 0])
+        
+        # Target a median luminance around 0.18 (middle gray)
+        if median_lum > 0:
+            # Calculate exposure to bring median to target
+            target_lum = 0.18
+            exposure = target_lum / median_lum
+            # Clamp exposure to reasonable range (0.1 to 10.0)
+            exposure = max(0.1, min(10.0, exposure))
+        else:
+            # fallback
+            exposure = 1.0
+        
+        ldr_data = _tone_map_reinhard(hdr_data, 1.0, exposure)
 
         # Convert to 8-bit
         ldr_8bit = np.clip(ldr_data * 255, 0, 255).astype(np.uint8)
