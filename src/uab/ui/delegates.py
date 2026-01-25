@@ -618,8 +618,7 @@ class AssetDelegate(QStyledItemDelegate):
                     if cache_key not in self._loading_assets and self._image_loader is not None:
                         self._loading_assets.add(cache_key)
                         max_size = self._cell_size - 16  # margins
-                        self._image_loader.set_items(
-                            [(cache_key, local_path, max_size)])
+                        self._image_loader.add_item((cache_key, local_path, max_size))
                         if not self._image_loader.isRunning():
                             self._image_loader.start()
                         return self._get_loading_placeholder()
@@ -670,6 +669,30 @@ class AssetDelegate(QStyledItemDelegate):
 
         self._loading_placeholder = pixmap
         return pixmap
+
+    def set_image_loader(self, loader: "LocalImageLoader") -> None:
+        """
+        Set the LocalImageLoader instance and connect its signals.
+
+        Args:
+            loader: The LocalImageLoader instance to use
+        """
+        self._image_loader = loader
+        loader.thumbnail_loaded.connect(self._on_image_thumbnail_loaded)
+
+    def _on_image_thumbnail_loaded(self, asset_id: str, pixmap: QPixmap) -> None:
+        """
+        Handle completion of thumbnail loading from background thread.
+
+        Updates the cache and emits signal to trigger view redraw.
+
+        Args:
+            asset_id: The asset ID for the loaded thumbnail
+            pixmap: The loaded thumbnail pixmap
+        """
+        self._loading_assets.discard(asset_id)
+        self._thumbnail_cache.put(asset_id, pixmap)
+        self.thumbnail_ready.emit(asset_id)
 
     def clear_cache(self) -> None:
         """Clear the thumbnail cache."""

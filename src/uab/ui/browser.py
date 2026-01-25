@@ -33,7 +33,7 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from uab.core.models import AssetType, StandardAsset, AssetStatus
 from uab.ui.delegates import AssetDelegate
-from uab.ui.utils import load_hdri_thumbnail
+from uab.ui.utils import load_hdri_thumbnail, LocalImageLoader
 
 # Placeholder image path (relative to package)
 _PLACEHOLDER_PATH = Path(
@@ -221,13 +221,11 @@ class DetailView(QWidget):
         self._current_asset = asset
         self._preview_needs_load = True
 
-        # Update labels
         self._name_label.setText(asset.name)
         self._type_label.setText(asset.type.value.upper())
         self._status_label.setText(asset.status.value.upper())
         self._source_label.setText(asset.source)
 
-        # Path (only show if local)
         if asset.local_path:
             self._path_label.setText(str(asset.local_path))
             self._path_label.setVisible(True)
@@ -235,7 +233,6 @@ class DetailView(QWidget):
             self._path_label.setText("Not downloaded")
             self._path_label.setVisible(True)
 
-        # Build metadata display
         metadata_parts = []
         if asset.metadata:
             if "resolutions" in asset.metadata:
@@ -259,7 +256,6 @@ class DetailView(QWidget):
                 metadata_parts) if metadata_parts else "No additional details"
         )
 
-        # Update button states
         self._download_btn.setVisible(
             asset.status == AssetStatus.CLOUD and self._download_enabled
         )
@@ -295,12 +291,10 @@ class DetailView(QWidget):
                 if hdri_pixmap:
                     pixmap = hdri_pixmap
 
-        # Fall back to placeholder if no image loaded
         if pixmap.isNull() and _PLACEHOLDER_PATH.exists():
             pixmap.load(str(_PLACEHOLDER_PATH))
 
         if not pixmap.isNull():
-            # Get available space for preview
             available_width = self._preview_label.width() - 40
             available_height = self._preview_label.height() - 40
 
@@ -405,6 +399,9 @@ class BrowserView(QWidget):
         self._replace_enabled = False
         self._get_node_label: Callable[[
             AssetType], str] = lambda t: t.value.title()
+
+        # for loading HDR and EXR files that don't have a pre-rendered thumbnail
+        self._image_loader = LocalImageLoader(self)
 
         self._init_ui()
         self._setup_connections()
@@ -545,28 +542,28 @@ class BrowserView(QWidget):
 
         self._delegate = AssetDelegate()
         self._delegate.set_preview_parent(grid.viewport())
+        self._delegate.set_image_loader(self._image_loader)
         grid.setItemDelegate(self._delegate)
 
-        # Context menu
         grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
-        # Install event filter for Ctrl+wheel zoom
+        # event filter for Ctrl+wheel zoom
         grid.viewport().installEventFilter(self)
 
         return grid
 
     def _setup_connections(self) -> None:
         """Connect internal signals and slots."""
-        # Search with debounce
         self._search_bar.textChanged.connect(self._on_search_text_changed)
+        # debounce search
         self._search_timer.timeout.connect(self._emit_search)
 
-        # Filter
         self._filter_combo.currentTextChanged.connect(self.filter_changed.emit)
 
-        # Grid interactions
         self._grid.doubleClicked.connect(self._on_item_double_clicked)
         self._grid.customContextMenuRequested.connect(self._show_context_menu)
+
+        self._delegate.thumbnail_ready.connect(self._on_thumbnail_ready)
 
     # PUBLIC API
 
@@ -690,6 +687,22 @@ class BrowserView(QWidget):
         return self._stack.currentIndex() == 1
 
     # INTERNAL METHODS
+
+    def _on_thumbnail_ready(self, asset_id: str) -> None:
+        """
+        Handle thumbnail ready signal from delegate.
+
+        Finds the item index and triggers a repaint for that item.
+
+        Args:
+            asset_id: The asset ID whose thumbnail is ready
+        """
+        for row in range(self._model.rowCount()):
+            index = self._model.index(row, 0)
+            asset = index.data(Qt.ItemDataRole.UserRole)
+            if asset and asset.id == asset_id:
+                self._grid.update(index)
+                break
 
     def _show_empty_state(self) -> None:
         """Display empty state placeholder."""

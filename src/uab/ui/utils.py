@@ -33,6 +33,17 @@ class ThumbnailLoaderBase(QThread):
             self._queue = items.copy()
             self._stop_requested = False
 
+    def add_item(self, item: Any) -> None:
+        """
+        Add a single item to the queue.
+
+        Args:
+            item: The item to add to the queue
+        """
+        with QMutexLocker(self._mutex):
+            self._queue.append(item)
+            self._stop_requested = False
+
     def request_stop(self) -> None:
         self._mutex.lock()
         try:
