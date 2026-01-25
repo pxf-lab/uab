@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QObject, Signal, Slot, QTimer, QThread, QMutex
+from PySide6.QtCore import QObject, Signal, Slot, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core.models import StandardAsset, AssetStatus
+from uab.ui.utils import ThumbnailLoaderBase
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -64,9 +65,9 @@ def get_thumbnail_cache_path(asset: StandardAsset, plugin_id: str) -> "Path":
     return cache_dir / cache_filename
 
 
-class ThumbnailWorker(QThread):
+class NetworkThumbnailLoader(ThumbnailLoaderBase):
     """
-    Background worker thread for fetching thumbnails.
+    Background worker thread for fetching thumbnails from network.
 
     Emits signals when thumbnails are ready so the main thread can
     update the UI safely.
@@ -78,57 +79,24 @@ class ThumbnailWorker(QThread):
     # Emitted when a single thumbnail is fetched: (asset_id, thumbnail_path)
     thumbnail_ready = Signal(str, object)  # asset_id, Path or None
 
-    # Emitted when a batch is complete (for periodic UI updates)
-    batch_complete = Signal()
-
-    # Emitted when all thumbnails are done
-    all_complete = Signal()
-
     def __init__(self, plugin, parent=None):
         super().__init__(parent)
         self._plugin = plugin
         self._plugin_id = plugin.plugin_id
-        self._queue: list[StandardAsset] = []
-        self._mutex = QMutex()
-        self._stop_requested = False
-        self._batch_size = 5
 
     def set_assets(self, assets: list[StandardAsset]) -> None:
         """Set the assets to fetch thumbnails for."""
-        self._mutex.lock()
-        self._queue = assets.copy()
-        self._stop_requested = False
-        self._mutex.unlock()
+        self.set_items(assets)
 
-    def request_stop(self) -> None:
-        """Request the worker to stop after current download."""
-        self._mutex.lock()
-        self._stop_requested = True
-        self._queue.clear()
-        self._mutex.unlock()
+    def _process_item(self, item: StandardAsset) -> None:
+        """
+        Process a single asset by fetching its thumbnail.
 
-    def run(self) -> None:
-        """Worker thread main loop."""
-        count = 0
-
-        while True:
-            # Get next asset from queue
-            self._mutex.lock()
-            if self._stop_requested or not self._queue:
-                self._mutex.unlock()
-                break
-            asset = self._queue.pop(0)
-            self._mutex.unlock()
-
-            thumb_path = self._fetch_thumbnail_sync(asset)
-
-            self.thumbnail_ready.emit(asset.id, thumb_path)
-            count += 1
-
-            if count % self._batch_size == 0:
-                self.batch_complete.emit()
-
-        self.all_complete.emit()
+        Args:
+            item: The StandardAsset to fetch thumbnail for
+        """
+        thumb_path = self._fetch_thumbnail_sync(item)
+        self.thumbnail_ready.emit(item.id, thumb_path)
 
     def _fetch_thumbnail_sync(self, asset: StandardAsset) -> "Path | None":
         """
@@ -219,7 +187,7 @@ class TabPresenter(QObject):
 
         self._current_query: str = ""
 
-        self._thumbnail_worker: ThumbnailWorker | None = None
+        self._thumbnail_worker: NetworkThumbnailLoader | None = None
 
         self._setup_connections()
 
@@ -372,7 +340,7 @@ class TabPresenter(QObject):
             self._thumbnail_worker.wait(1000)  # Wait up to 1 second
             self._thumbnail_worker.deleteLater()
 
-        self._thumbnail_worker = ThumbnailWorker(self._plugin, self)
+        self._thumbnail_worker = NetworkThumbnailLoader(self._plugin, self)
         self._thumbnail_worker.thumbnail_ready.connect(
             self._on_thumbnail_ready)
         self._thumbnail_worker.batch_complete.connect(

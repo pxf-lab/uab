@@ -5,7 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional, Any
 
-from PySide6.QtCore import QThread, QMutex, Signal
+from PySide6.QtCore import QThread, QMutex, QMutexLocker, Signal
 from PySide6.QtGui import QPixmap
 import numpy as np
 from PIL import Image
@@ -29,7 +29,7 @@ class ThumbnailLoaderBase(QThread):
         self._batch_size = 5
 
     def set_items(self, items: list[Any]) -> None:
-        with self.QMutexLocker(self._mutex):
+        with QMutexLocker(self._mutex):
             self._queue = items.copy()
             self._stop_requested = False
 
