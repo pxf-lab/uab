@@ -17,15 +17,7 @@ import imageio  # Use legacy API for better compatibility
 class ThumbnailLoaderBase(QThread):
     """
     Abstract base class for thumbnail loading workers.
-
-    Provides common thread management, queue handling, and signal infrastructure.
-    Subclasses implement `_process_item()` to handle specific loading logic.
-
-    Attribute:
-        batch_complete: Signal emitted when a batch of items is processed
-        all_complete: Signal emitted when all items are processed
     """
-
     batch_complete = Signal()
     all_complete = Signal()
 
@@ -37,39 +29,32 @@ class ThumbnailLoaderBase(QThread):
         self._batch_size = 5
 
     def set_items(self, items: list[Any]) -> None:
-        """
-        Set the items to process.
-
-        Args:
-            items: List of items to process (type depends on subclass)
-        """
-        self._mutex.lock()
-        self._queue = items.copy()
-        self._stop_requested = False
-        self._mutex.unlock()
+        with self.QMutexLocker(self._mutex):
+            self._queue = items.copy()
+            self._stop_requested = False
 
     def request_stop(self) -> None:
-        """Request the worker to stop after current item."""
         self._mutex.lock()
-        self._stop_requested = True
-        self._queue.clear()
-        self._mutex.unlock()
+        try:
+            self._stop_requested = True
+            self._queue.clear()
+        finally:
+            self._mutex.unlock()
 
     def run(self) -> None:
         count = 0
-
         while True:
             self._mutex.lock()
             if self._stop_requested or not self._queue:
                 self._mutex.unlock()
                 break
+
             item = self._queue.pop(0)
             self._mutex.unlock()
 
             self._process_item(item)
 
             count += 1
-
             if count % self._batch_size == 0:
                 self.batch_complete.emit()
 
