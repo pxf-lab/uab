@@ -71,7 +71,7 @@ class ThumbnailLoaderBase(QThread):
         Args:
             item: The item to process (type depends on subclass)
         """
-        ...
+        raise NotImplementedError("Subclasses must implement _process_item")
 
 
 def load_hdri_thumbnail(path: Path, max_size: int = 256) -> Optional[QPixmap]:
