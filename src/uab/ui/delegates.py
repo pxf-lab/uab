@@ -593,7 +593,8 @@ class AssetDelegate(QStyledItemDelegate):
         """
         Get thumbnail pixmap from cache or load it.
 
-        # TODO: HDR/EXR thumbnails need to be pre-rendered, it seems to be too slow to load during paint()
+        For slow-loading formats (HDR/EXR), returns a placeholder immediately
+        and queues background loading.
         """
         cache_key = asset.id
 
@@ -612,7 +613,16 @@ class AssetDelegate(QStyledItemDelegate):
                 suffix = local_path.suffix.lower()
                 if suffix in (".png", ".jpg", ".jpeg", ".bmp", ".gif"):
                     pixmap.load(str(local_path))
-                # TODO: see if there's a faster way to dynamically load HDR/EXR thumbnails during paint()
+                elif suffix in (".hdr", ".exr"):
+                    # Slow-loading format: queue async load and return placeholder
+                    if cache_key not in self._loading_assets and self._image_loader is not None:
+                        self._loading_assets.add(cache_key)
+                        max_size = self._cell_size - 16  # margins
+                        self._image_loader.set_items(
+                            [(cache_key, local_path, max_size)])
+                        if not self._image_loader.isRunning():
+                            self._image_loader.start()
+                        return self._get_loading_placeholder()
         if not pixmap.isNull():
             self._thumbnail_cache.put(cache_key, pixmap)
             return pixmap
