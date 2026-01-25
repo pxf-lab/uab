@@ -3,9 +3,9 @@
 from collections import OrderedDict
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import Qt, QSize, QRect, QPoint, QModelIndex, QTimer
+from PySide6.QtCore import Qt, QSize, QRect, QPoint, QModelIndex, QTimer, Signal
 from PySide6.QtGui import (
     QPainter,
     QPixmap,
@@ -27,6 +27,9 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core.models import StandardAsset, AssetStatus, AssetType
+
+if TYPE_CHECKING:
+    from uab.ui.utils import LocalImageLoader
 
 
 class LargePreviewPopup(QDialog):
@@ -156,6 +159,8 @@ class AssetDelegate(QStyledItemDelegate):
     # Delay before showing the large preview (milliseconds)
     HOVER_PREVIEW_DELAY_MS = 1000
 
+    thumbnail_ready = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._cell_size = 180
@@ -169,6 +174,11 @@ class AssetDelegate(QStyledItemDelegate):
         self._preview_asset: Optional[StandardAsset] = None
         self._preview_parent: Optional[QWidget] = None
         self._preview_item_rect: Optional[QRect] = None
+
+        # thumbnail loading state
+        self._loading_assets: set[str] = set()
+        self._loading_placeholder: Optional[QPixmap] = None
+        self._image_loader: Optional["LocalImageLoader"] = None
 
     def set_preview_parent(self, parent: QWidget) -> None:
         """Set the parent widget for the preview popup."""
@@ -246,7 +256,6 @@ class AssetDelegate(QStyledItemDelegate):
         """Load full resolution image for the large preview popup."""
         pixmap = QPixmap()
 
-        # Try thumbnail_path first (may be higher res than we think)
         if asset.thumbnail_path and asset.thumbnail_path.exists():
             pixmap.load(str(asset.thumbnail_path))
 
