@@ -55,6 +55,39 @@ class ThumbnailLoaderBase(QThread):
         self._queue.clear()
         self._mutex.unlock()
 
+    def run(self) -> None:
+        count = 0
+
+        while True:
+            self._mutex.lock()
+            if self._stop_requested or not self._queue:
+                self._mutex.unlock()
+                break
+            item = self._queue.pop(0)
+            self._mutex.unlock()
+
+            self._process_item(item)
+
+            count += 1
+
+            if count % self._batch_size == 0:
+                self.batch_complete.emit()
+
+        self.all_complete.emit()
+
+    @abstractmethod
+    def _process_item(self, item: Any) -> None:
+        """
+        Process a single item from the queue.
+
+        Subclasses must implement this method to handle their specific
+        loading logic. This method is called from the background thread.
+
+        Args:
+            item: The item to process (type depends on subclass)
+        """
+        ...
+
 
 def load_hdri_thumbnail(path: Path, max_size: int = 256) -> Optional[QPixmap]:
     """
