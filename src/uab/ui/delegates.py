@@ -629,6 +629,48 @@ class AssetDelegate(QStyledItemDelegate):
 
         return None
 
+    def _get_loading_placeholder(self) -> Optional[QPixmap]:
+        """
+        Create and cache a lightweight "Loading..." placeholder icon.
+
+        Returns:
+            Cached QPixmap with loading indicator, or None if creation fails
+        """
+        if self._loading_placeholder is not None and not self._loading_placeholder.isNull():
+            return self._loading_placeholder
+
+        size = self._cell_size - 16  # margins
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        # loading indicator
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # background circle
+        margin = 20
+        circle_rect = QRect(margin, margin, size -
+                            (margin * 2), size - (margin * 2))
+        painter.setBrush(QBrush(QColor(40, 40, 40, 200)))
+        painter.setPen(QPen(QColor(100, 100, 100), 2))
+        painter.drawEllipse(circle_rect)
+
+        # text
+        painter.setPen(self.COLORS.TEXT_MUTED.qcolor)
+        font = painter.font()
+        font.setPointSize(10)
+        painter.setFont(font)
+        painter.drawText(
+            circle_rect,
+            Qt.AlignmentFlag.AlignCenter,
+            "Loading..."
+        )
+
+        painter.end()
+
+        self._loading_placeholder = pixmap
+        return pixmap
+
     def clear_cache(self) -> None:
         """Clear the thumbnail cache."""
         self._thumbnail_cache.clear()
