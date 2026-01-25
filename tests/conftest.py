@@ -122,35 +122,58 @@ def _setup_pyside6_mock():
     sys.modules["PySide6.QtWidgets"] = mock_qt_widgets
 
 
-# Apply the mock before any test imports
 _setup_pyside6_mock()
 
 
-# Pre-import ui modules so they exist for patching
 
 def _setup_ui_mocks():
     """Pre-import UI modules so they exist for patching."""
-    try:
-        import uab.ui
-        import uab.ui.browser
-        import uab.ui.delegates
-    except ImportError as e:
-        # If imports fail for other reasons, create mock modules
-        from types import ModuleType
-
-        if "uab.ui" not in sys.modules:
-            mock_ui = ModuleType("uab.ui")
-            sys.modules["uab.ui"] = mock_ui
-
-        if "uab.ui.browser" not in sys.modules:
-            mock_browser = ModuleType("uab.ui.browser")
-            mock_browser.BrowserView = MagicMock()
-            sys.modules["uab.ui.browser"] = mock_browser
-
-        if "uab.ui.delegates" not in sys.modules:
-            mock_delegates = ModuleType("uab.ui.delegates")
-            mock_delegates.AssetDelegate = MagicMock()
-            sys.modules["uab.ui.delegates"] = mock_delegates
+    from types import ModuleType
+    
+    if "uab.ui" not in sys.modules:
+        mock_ui = ModuleType("uab.ui")
+        sys.modules["uab.ui"] = mock_ui
+    
+    if "uab.ui.browser" not in sys.modules:
+        mock_browser = ModuleType("uab.ui.browser")
+        mock_browser.BrowserView = MagicMock()
+        sys.modules["uab.ui.browser"] = mock_browser
+    
+    if "uab.ui.delegates" not in sys.modules:
+        mock_delegates = ModuleType("uab.ui.delegates")
+        mock_delegates.AssetDelegate = MagicMock()
+        sys.modules["uab.ui.delegates"] = mock_delegates
+    
+    if "uab.ui.utils" not in sys.modules:
+        mock_utils = ModuleType("uab.ui.utils")
+        from PySide6.QtCore import QThread, Signal, QMutex
+        class MockThumbnailLoaderBase(QThread):
+            batch_complete = Signal()
+            all_complete = Signal()
+            
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self._queue = []
+                self._mutex = QMutex()
+                self._stop_requested = False
+                self._batch_size = 5
+            
+            def set_items(self, items):
+                self._queue = items.copy()
+                self._stop_requested = False
+            
+            def add_item(self, item):
+                self._queue.append(item)
+                self._stop_requested = False
+            
+            def request_stop(self):
+                self._stop_requested = True
+            
+            def run(self):
+                pass
+        
+        mock_utils.ThumbnailLoaderBase = MockThumbnailLoaderBase
+        sys.modules["uab.ui.utils"] = mock_utils
 
 
 _setup_ui_mocks()
