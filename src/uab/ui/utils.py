@@ -1,15 +1,59 @@
 """Utility functions for UI layer."""
 
+from abc import abstractmethod
 from io import BytesIO
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
+from PySide6.QtCore import QThread, QMutex, Signal
 from PySide6.QtGui import QPixmap
 import numpy as np
 from PIL import Image
 import OpenEXR
 import Imath
 import imageio  # Use legacy API for better compatibility
+
+
+class ThumbnailLoaderBase(QThread):
+    """
+    Abstract base class for thumbnail loading workers.
+
+    Provides common thread management, queue handling, and signal infrastructure.
+    Subclasses implement `_process_item()` to handle specific loading logic.
+
+    Attribute:
+        batch_complete: Signal emitted when a batch of items is processed
+        all_complete: Signal emitted when all items are processed
+    """
+
+    batch_complete = Signal()
+    all_complete = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._queue: list[Any] = []
+        self._mutex = QMutex()
+        self._stop_requested = False
+        self._batch_size = 5
+
+    def set_items(self, items: list[Any]) -> None:
+        """
+        Set the items to process.
+
+        Args:
+            items: List of items to process (type depends on subclass)
+        """
+        self._mutex.lock()
+        self._queue = items.copy()
+        self._stop_requested = False
+        self._mutex.unlock()
+
+    def request_stop(self) -> None:
+        """Request the worker to stop after current item."""
+        self._mutex.lock()
+        self._stop_requested = True
+        self._queue.clear()
+        self._mutex.unlock()
 
 
 def load_hdri_thumbnail(path: Path, max_size: int = 256) -> Optional[QPixmap]:
@@ -221,10 +265,8 @@ def _load_exr_file(path: Path, max_size: int) -> Optional[QPixmap]:
         # Tone map, experimentally good values for exr files
         ldr_data = _tone_map_reinhard(hdr_data, 1.0, 2.2)
 
-        # Convert to 8-bit
         ldr_8bit = np.clip(ldr_data * 255, 0, 255).astype(np.uint8)
 
-        # Create PIL image
         ldr_img = Image.fromarray(ldr_8bit, mode="RGB")
 
         # Resize if needed
