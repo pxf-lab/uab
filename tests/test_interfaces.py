@@ -1,4 +1,4 @@
-from uab.core.interfaces import AssetLibraryPlugin, Plugin
+from uab.core.interfaces import AssetLibraryPlugin, Browsable, Plugin
 from uab.core.models import StandardAsset
 
 
@@ -6,7 +6,7 @@ class DummyLibraryPlugin(AssetLibraryPlugin):
     plugin_id = "dummy"
     display_name = "Dummy Library"
 
-    async def search(self, query: str) -> list[StandardAsset]:
+    async def search(self, query: str) -> list[Browsable]:
         return []
 
     async def download(

@@ -73,6 +73,11 @@ class StandardAsset:
         if not self.id:
             self.id = f"{self.source}-{self.name}-{str(uuid4())}"
 
+    @property
+    def display_status(self) -> AssetStatus:
+        """Status to show in UI (alias for `status`)."""
+        return self.status
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization (e.g., database storage)."""
         return {

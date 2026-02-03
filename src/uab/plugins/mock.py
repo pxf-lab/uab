@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from uab.core.interfaces import AssetLibraryPlugin
+from uab.core.interfaces import AssetLibraryPlugin, Browsable
 from uab.core.models import StandardAsset, AssetStatus, AssetType
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class MockPlugin(AssetLibraryPlugin):
 
         return assets
 
-    async def search(self, query: str) -> list[StandardAsset]:
+    async def search(self, query: str) -> list[Browsable]:
         """
         Search mock assets by name.
 

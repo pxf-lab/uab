@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from uab.core.database import AssetDatabase
+from uab.core.interfaces import Browsable
 from uab.core.models import AssetStatus, AssetType, StandardAsset
 from uab.plugins.base import SharedAssetLibraryUtils
 
@@ -54,7 +55,7 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
         """
         super().__init__(db=db, library_root=library_root)
 
-    async def search(self, query: str) -> list[StandardAsset]:
+    async def search(self, query: str) -> list[Browsable]:
         """
         Search local assets by name.
 
@@ -65,7 +66,7 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             query: Search string (empty returns all local assets)
 
         Returns:
-            List of matching local StandardAsset objects
+            List of matching local Browsable items (ref interfaces.py)
         """
         if not query:
             # Return all local assets

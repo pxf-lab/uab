@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from uab.core.database import AssetDatabase
+from uab.core.interfaces import Browsable
 from uab.core.models import AssetStatus, AssetType, StandardAsset
 from uab.plugins.base import SharedAssetLibraryUtils
 
@@ -72,7 +73,7 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
         super().__init__(db=db, library_root=library_root)
         self._asset_type_filter = asset_type_filter
 
-    async def search(self, query: str) -> list[StandardAsset]:
+    async def search(self, query: str) -> list[Browsable]:
         """
         Search PolyHaven assets.
 
@@ -84,7 +85,7 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
             query: Search string (filters by name, empty returns all)
 
         Returns:
-            List of StandardAsset objects
+            List of browsables (see interfaces.py)
         """
         # Determine which asset types to fetch
         if self._asset_type_filter:

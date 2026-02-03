@@ -2,9 +2,30 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from uab.core.models import AssetType, StandardAsset
+from uab.core.models import AssetStatus, AssetType, StandardAsset
+
+
+@runtime_checkable
+class Browsable(Protocol):
+    """Common interface for anything the browser can display."""
+
+    id: str
+    name: str
+    source: str
+    thumbnail_url: str | None
+    thumbnail_path: Path | None
+
+    @property
+    def display_status(self) -> AssetStatus:
+        """Status to show in UI (may be derived for composites)."""
+        ...
+
+
+# Type alias for composite children
+# TODO: implement these types
+Composable: TypeAlias = "Asset | CompositeAsset"
 
 
 class Plugin:
@@ -90,7 +111,7 @@ class AssetLibraryPlugin(Plugin, ABC):
         cls._implementations.clear()
 
     @abstractmethod
-    async def search(self, query: str) -> list[StandardAsset]:
+    async def search(self, query: str) -> list[Browsable]:
         """
         Search for assets matching the query.
 
@@ -98,7 +119,7 @@ class AssetLibraryPlugin(Plugin, ABC):
             query: Search string (empty string returns all/default assets)
 
         Returns:
-            List of matching StandardAsset objects
+            List of matching Browsable items
         """
         ...
 

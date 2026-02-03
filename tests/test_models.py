@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Callable
 
+from uab.core.interfaces import Browsable
 from uab.core.models import AssetStatus, AssetType, StandardAsset
 
 
@@ -37,3 +38,9 @@ def test_standard_asset_to_from_dict_roundtrip(make_asset: Callable[..., Standar
     assert restored.thumbnail_url == asset.thumbnail_url
     assert restored.thumbnail_path == asset.thumbnail_path
     assert restored.metadata == asset.metadata
+
+
+def test_standard_asset_is_browsable(make_asset: Callable[..., StandardAsset]) -> None:
+    asset = make_asset(status=AssetStatus.CLOUD)
+    assert isinstance(asset, Browsable)
+    assert asset.display_status == asset.status
