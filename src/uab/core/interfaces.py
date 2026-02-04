@@ -6,7 +6,14 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from uab.core.models import Asset, AssetStatus, AssetType, CompositeAsset, StandardAsset
+from uab.core.models import (
+    Asset,
+    AssetStatus,
+    AssetType,
+    CompositeAsset,
+    CompositeType,
+    StandardAsset,
+)
 
 
 @runtime_checkable
@@ -252,11 +259,34 @@ class HostIntegration(ABC):
         """
         Import a `CompositeAsset` into the host.
 
-        Default implementation is not provided; host integrations should
-        override this as composite support is introduced.
+        Default implementation dispatches by `composite.composite_type`.
+        Integrations should override the corresponding `_import_*` methods.
         """
+        if composite.composite_type in (CompositeType.MATERIAL, CompositeType.TEXTURE):
+            return self._import_material(composite, options)
+        if composite.composite_type == CompositeType.HDRI:
+            return self._import_hdri_composite(composite, options)
+        if composite.composite_type == CompositeType.MODEL:
+            return self._import_model_composite(composite, options)
+
+        raise ValueError(f"Unsupported composite type: {composite.composite_type}")
+
+    def _import_material(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
+        """Import a MATERIAL composite."""
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement import_composite()"
+            f"{self.__class__.__name__} does not implement _import_material()"
+        )
+
+    def _import_hdri_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
+        """Import an HDRI composite."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement _import_hdri_composite()"
+        )
+
+    def _import_model_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
+        """Import a MODEL composite."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement _import_model_composite()"
         )
 
     @abstractmethod
@@ -323,12 +353,32 @@ class RenderStrategy(ABC):
     """
 
     @abstractmethod
-    def create_environment_light(self, asset: StandardAsset, options: dict[str, Any]) -> Any:
+    def get_required_texture_maps(self) -> set[str]:
         """
-        Create an environment light from the asset.
+        Return required texture-map keys for material import.
+
+        Note: This set may contain naming variants; any one of the returned
+        keys can satisfy the requirement (e.g., diffuse/base_color/albedo).
+        """
+        ...
+
+    def get_optional_texture_maps(self) -> set[str]:
+        """
+        Return optional texture-map keys for material import.
+
+        Missing optional maps should not block import, but may be logged.
+        """
+        return {"normal", "roughness", "metallic", "ao", "displacement"}
+
+    @abstractmethod
+    def create_environment_light(
+        self, composite: CompositeAsset, options: dict[str, Any]
+    ) -> Any:
+        """
+        Create an environment light from a composite.
 
         Args:
-            asset: The asset to create environment light from
+            composite: The composite to create environment light from
             options: Environment light creation options
 
         Returns:
@@ -351,14 +401,31 @@ class RenderStrategy(ABC):
         ...
 
     @abstractmethod
-    def create_material(
-        self, asset: StandardAsset, options: dict[str, Any]
+    def create_material_from_textures(
+        self, name: str, textures: dict[str, Path], options: dict[str, Any]
     ) -> Any:
         """
-        Create a material from the asset in the host application.
+        Create a material from a set of texture file paths.
 
         Args:
-            asset: The asset to create material from
+            name: Material display name
+            textures: Dict of role/map key -> local texture path
+            options: Material creation options
+
+        Returns:
+            The created material node/network/etc (type depends on host)
+        """
+        ...
+
+    @abstractmethod
+    def create_material(
+        self, composite: CompositeAsset, options: dict[str, Any]
+    ) -> Any:
+        """
+        Create a material from a composite in the host application.
+
+        Args:
+            composite: The composite to create material from
             options: Material creation options
 
         Returns:

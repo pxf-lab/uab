@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from pathlib import Path
 
-from uab.core.models import StandardAsset, AssetType
+from uab.core.models import CompositeAsset, CompositeType, StandardAsset
 from uab.integrations.houdini.strategies.base import SharedHoudiniRenderStrategyUtils
 
 logger = logging.getLogger(__name__)
@@ -33,37 +34,52 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
     def renderer_name(self) -> str:
         return "karma"
 
+    def get_required_texture_maps(self) -> set[str]:
+        # Any one of these variants satisfies the "base color" requirement.
+        return {"diffuse", "base_color", "albedo"}
+
     def create_environment_light(
-        self, asset: StandardAsset, options: dict[str, Any]
+        self, composite: CompositeAsset, options: dict[str, Any]
     ) -> Any:
         """
-        Create a Karma/USD Dome light from an HDRI asset.
+        Create a Karma/USD Dome light from an HDRI composite.
 
         Creates a domelight LOP in /stage with the HDRI texture set.
 
         Args:
-            asset: The HDRI asset (must have local_path set)
+            composite: The HDRI composite (must have a LOCAL leaf Asset)
             options: Creation options (unused currently)
 
         Returns:
             The created domelight node (hou.Node)
 
         Raises:
-            ValueError: If asset is not an HDRI or has no local path
+            ValueError: If no local HDRI file is available
         """
         import hou
 
-        self._log_import(asset, "Creating environment light")
+        if composite.composite_type != CompositeType.HDRI:
+            raise ValueError(
+                f"Expected HDRI composite, got: {composite.composite_type}"
+            )
 
-        hdri_path = self._get_hdri_path(asset)
-        if not hdri_path:
-            raise ValueError(f"No HDRI file found for asset: {asset.name}")
+        target_resolution = options.get("resolution")
+        if not isinstance(target_resolution, str):
+            target_resolution = None
+
+        selected = self._select_local_asset_for_resolution(
+            composite, target_resolution
+        )
+        if not selected or not selected.local_path:
+            raise ValueError(f"No local HDRI available for: {composite.name}")
+
+        hdri_path = str(selected.local_path)
 
         stage = hou.node("/stage")
         if stage is None:
             stage = hou.node("/").createNode("stage", "stage")
 
-        light_name = self._sanitize_node_name(f"{asset.name}_domelight")
+        light_name = self._sanitize_node_name(f"{composite.name}_domelight")
 
         domelight = stage.createNode("domelight", light_name)
 
@@ -146,11 +162,11 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
 
         logger.info(f"Updated Karma dome light: {node.path()}")
 
-    def create_material(
-        self, asset: StandardAsset, options: dict[str, Any]
+    def create_material_from_textures(
+        self, name: str, textures: dict[str, Path], options: dict[str, Any]
     ) -> Any:
         """
-        Create a MaterialX Standard Surface material from a texture asset.
+        Create a MaterialX Standard Surface material from texture paths.
 
         Creates a material network in /stage using MaterialX nodes:
         - materiallibrary container
@@ -159,29 +175,28 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         - mtlxnormalmap processor for normal maps
 
         Args:
-            asset: The texture asset (must have local_path set)
+            name: Material display name
+            textures: Dict of role/map key -> local texture path
             options: Creation options (unused currently)
 
         Returns:
             The created materiallibrary node (hou.Node)
 
         Raises:
-            ValueError: If no texture maps found for asset
+            ValueError: If no texture maps found
         """
         import hou
 
-        self._log_import(asset, "Creating material")
-
-        available_maps = self._get_available_maps(asset)
-        if not available_maps:
-            raise ValueError(f"No texture maps found for asset: {asset.name}")
+        normalized = self._normalize_texture_keys(textures)
+        if not normalized:
+            raise ValueError(f"No texture maps found for material: {name}")
 
         # Get or create /stage
         stage = hou.node("/stage")
         if stage is None:
             stage = hou.node("/").createNode("stage", "stage")
 
-        mat_name = self._get_material_name(asset)
+        mat_name = f"{self._sanitize_node_name(name)}_{self.renderer_name}"
 
         mat_lib = stage.createNode("materiallibrary", mat_name)
 
@@ -206,7 +221,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         if collect_node is None:
             collect_node = mat_context.createNode("collect", "collect1")
 
-        self._connect_texture_maps(mat_context, surface_shader, available_maps)
+        self._connect_texture_maps(mat_context, surface_shader, normalized)
 
         collect_node.setInput(0, surface_shader, 0)
 
@@ -222,7 +237,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         self,
         mat_context: Any,  # hou.Node
         surface_shader: Any,  # hou.Node
-        maps: dict[str, str],
+        maps: dict[str, Path],
     ) -> None:
         """
         Create MaterialX image nodes and connect them to the surface shader.
@@ -235,7 +250,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         param_map = {
             "diffuse": ("base_color", None),
             "roughness": ("specular_roughness", None),
-            "metalness": ("metalness", None),
+            "metallic": ("metalness", None),
             "normal": ("normal", "mtlxnormalmap"),
             "ao": ("base_color", "multiply"),  # Would multiply with diffuse
             "emission": ("emission_color", None),
@@ -250,7 +265,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
             param_name, processor = param_map[map_name]
 
             image_node = mat_context.createNode("mtlximage", f"{map_name}_tex")
-            image_node.parm("file").set(texture_path)
+            image_node.parm("file").set(str(texture_path))
 
             if map_name in ["roughness", "metalness", "normal", "ao", "opacity"]:
                 colorspace_parm = image_node.parm("signature")
