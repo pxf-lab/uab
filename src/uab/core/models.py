@@ -87,6 +87,15 @@ class Asset:
         """Status to show in UI (direct for single-file assets)."""
         return self.status
 
+    # Backwards-compatible alias for pre-refactor code paths
+    @property
+    def type(self) -> AssetType:  # noqa: A003 - keep name for compatibility
+        return self.asset_type
+
+    @type.setter
+    def type(self, value: AssetType | str) -> None:  # noqa: A003 - keep name for compatibility
+        self.asset_type = AssetType(value) if isinstance(value, str) else value
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization (e.g., database storage)."""
         return {
