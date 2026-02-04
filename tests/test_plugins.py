@@ -1050,6 +1050,51 @@ class TestPolyHavenPluginCompositeTree:
                    AssetStatus.LOCAL for a in updated_texture.children)
 
 
+class TestPolyHavenPluginErrorHandling:
+    """Tests for PolyHavenPlugin error handling (API failures)."""
+
+    def test_search_skips_failed_asset_type_and_returns_others(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        hdris_response = {"sunset_hdri": {"name": "Sunset HDRI"}}
+        models_response = {"simple_chair": {"name": "Simple Chair"}}
+
+        async def _fake_fetch(url: str, *args, **kwargs):  # noqa: ARG001
+            if "t=hdris" in url:
+                return hdris_response
+            if "t=models" in url:
+                return models_response
+            if "t=textures" in url:
+                raise RuntimeError("boom")
+            return {}
+
+        with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = _fake_fetch
+            results = asyncio.run(plugin.search(""))
+
+        # Textures failed, HDRIs + Models still return.
+        assert len(results) == 2
+        by_type = {(r.composite_type, r.external_id)
+                   for r in results if isinstance(r, CompositeAsset)}
+        assert (CompositeType.HDRI, "sunset_hdri") in by_type
+        assert (CompositeType.MODEL, "simple_chair") in by_type
+
+    def test_get_asset_info_returns_none_on_api_failure(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("boom")
+            value = asyncio.run(plugin.get_asset_info("rusty_metal"))
+
+        assert value is None
+
+
 class TestBaseAssetPluginInit:
     """Tests for SharedAssetLibraryUtils initialization."""
 

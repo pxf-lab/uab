@@ -6,11 +6,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from pathlib import Path
-from typing import Any, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, TypeAlias, Union
 from uuid import uuid4
 import warnings
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from uab.core.schemas import CompositeTypeSchema
 
 
 class AssetStatus(str, Enum):
@@ -231,6 +234,86 @@ class CompositeAsset:
     def get_children_by_type(self, child_type: type) -> list[Composable]:
         """Return direct children that match the given type."""
         return [child for child in self.children if isinstance(child, child_type)]
+
+    # Schema helpers
+
+    def get_schema(self) -> CompositeTypeSchema:
+        """Get the schema for this composite type."""
+        from uab.core.schemas import get_schema
+
+        return get_schema(self.composite_type)
+
+    @property
+    def present_roles(self) -> set[str]:
+        """Get the set of roles present in direct children (via metadata['role'])."""
+        roles: set[str] = set()
+        for child in self.children:
+            meta = getattr(child, "metadata", None)
+            if not isinstance(meta, dict):
+                continue
+            role = meta.get("role")
+            if isinstance(role, str) and role:
+                roles.add(role)
+        return roles
+
+    def is_complete(self) -> bool:
+        """Check if all required roles are present per the schema."""
+        schema = self.get_schema()
+        if not schema.required_roles:
+            return True
+        return schema.required_roles <= self.present_roles
+
+    def get_missing_roles(self) -> set[str]:
+        """Get required roles that are missing."""
+        schema = self.get_schema()
+        if not schema.required_roles:
+            return set()
+        return schema.required_roles - self.present_roles
+
+    def validate(self) -> list[str]:
+        """Validate this composite against its schema. Returns list of warnings."""
+        warnings: list[str] = []
+        schema = self.get_schema()
+
+        missing = self.get_missing_roles()
+        if missing:
+            warnings.append(
+                f"Missing required roles: {', '.join(sorted(missing))}"
+            )
+
+        # Unknown roles (direct children)
+        for role in sorted(self.present_roles):
+            if not schema.is_role_valid(role):
+                warnings.append(
+                    f"Unknown role '{role}' for {self.composite_type.value}"
+                )
+
+        allowed = tuple(schema.allowed_child_types)
+        for child in self.children:
+            if allowed and not isinstance(child, allowed):
+                warnings.append(
+                    f"Child type {type(child).__name__} not allowed in {self.composite_type.value}"
+                )
+
+            if isinstance(child, Asset) and schema.child_asset_type is not None:
+                if child.asset_type != schema.child_asset_type:
+                    warnings.append(
+                        f"Asset '{child.name}' is {child.asset_type.value}, expected {schema.child_asset_type.value}"
+                    )
+
+            if (
+                isinstance(child, CompositeAsset)
+                and schema.expected_child_composite_types
+                and child.composite_type not in schema.expected_child_composite_types
+            ):
+                expected = ", ".join(
+                    sorted(ct.value for ct in schema.expected_child_composite_types)
+                )
+                warnings.append(
+                    f"Child composite '{child.name}' is {child.composite_type.value}, expected one of: {expected}"
+                )
+
+        return warnings
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary (children serialized recursively)."""
