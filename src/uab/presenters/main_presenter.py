@@ -262,16 +262,27 @@ class MainPresenter:
         """Handle tab close request."""
         self.close_tab(index)
 
-    def _on_download_complete(self) -> None:
+    def _on_download_complete(self, payload: object | None = None) -> None:
         """
         Handle download completion from any tab
 
         Refreshes any open local library tabs so newly downloaded assets appear.
         """
+        # Payload is optional; TabPresenter emits a dict like:
+        # {"source": "polyhaven", "downloaded_item_ids": ["..."]}
+        source = None
+        downloaded_ids: list[str] | None = None
+        if isinstance(payload, dict):
+            source = payload.get("source")
+            maybe_ids = payload.get("downloaded_item_ids")
+            if isinstance(maybe_ids, list) and all(isinstance(x, str) for x in maybe_ids):
+                downloaded_ids = maybe_ids
+
         for tab_index, (plugin_id, tab_presenter) in self._tabs.items():
             if plugin_id == "local" and tab_presenter is not None:
                 logger.debug(
                     f"Refreshing local library tab at index {tab_index}")
+                # In future we can use downloaded_ids to do targeted refresh.
                 tab_presenter.refresh()
 
     # PUBLIC API

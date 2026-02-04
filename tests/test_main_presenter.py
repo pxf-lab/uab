@@ -304,6 +304,27 @@ class TestMainPresenterRenderers:
         assert renderers == ["arnold", "redshift"]
 
 
+class TestMainPresenterCrossTabRefresh:
+    def test_download_complete_refreshes_local_tabs(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        """When a download completes, local library tabs should refresh."""
+        from uab.presenters.main_presenter import MainPresenter
+
+        with patch.object(MainPresenter, "_create_default_tab"):
+            presenter = MainPresenter(view=mock_view, host=mock_host)
+
+        local_tab = MagicMock()
+        other_tab = MagicMock()
+        presenter._tabs = {0: ("local", local_tab), 1: ("polyhaven", other_tab)}
+
+        presenter._on_download_complete(
+            {"source": "polyhaven", "downloaded_item_ids": ["asset-1"]}
+        )
+
+        local_tab.refresh.assert_called_once()
+
+
 class TestMainPresenterGetPluginForTab:
     """Tests for get_plugin_for_tab method."""
 

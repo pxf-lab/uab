@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from uab.core.models import StandardAsset, AssetStatus
+from uab.core.interfaces import Browsable, SupportsLocalImport
+from uab.core.models import Asset, AssetStatus, AssetType, CompositeAsset, StandardAsset
 from uab.ui.utils import ThumbnailLoaderBase
 
 if TYPE_CHECKING:
@@ -30,12 +31,10 @@ if TYPE_CHECKING:
     from uab.core.interfaces import AssetLibraryPlugin, HostIntegration
     from uab.ui.browser import BrowserView
 
-from uab.core.interfaces import SupportsLocalImport
-
 logger = logging.getLogger(__name__)
 
 
-def get_thumbnail_cache_path(asset: StandardAsset, plugin_id: str) -> "Path":
+def get_thumbnail_cache_path(item: Any, plugin_id: str) -> "Path":
     """
     Get the cache path for an asset's thumbnail.
 
@@ -54,14 +53,17 @@ def get_thumbnail_cache_path(asset: StandardAsset, plugin_id: str) -> "Path":
 
     cache_dir = config.get_thumbnail_cache_dir(plugin_id)
 
-    ext = ".jpg"  # Default thumbnail extension, below hcecks for a different extension from the query
-    if asset.thumbnail_url:
-        url_path = asset.thumbnail_url.split('?')[0]
+    ext = ".jpg"  # Default thumbnail extension, below checks for a different extension from the query
+    thumbnail_url = getattr(item, "thumbnail_url", None)
+    if thumbnail_url:
+        url_path = thumbnail_url.split("?")[0]
         url_ext = PathLib(url_path).suffix.lower()
         if url_ext:
             ext = url_ext
 
-    cache_filename = f"{asset.external_id}{ext}"
+    external_id = getattr(item, "external_id",
+                          None) or getattr(item, "id", "item")
+    cache_filename = f"{external_id}{ext}"
     return cache_dir / cache_filename
 
 
@@ -76,7 +78,6 @@ class NetworkThumbnailLoader(ThumbnailLoaderBase):
     aiohttp sessions are not thread-safe and can't be shared across threads.
     """
 
-    # Emitted when a single thumbnail is fetched: (asset_id, thumbnail_path)
     thumbnail_ready = Signal(str, object)  # asset_id, Path or None
 
     def __init__(self, plugin, parent=None):
@@ -84,11 +85,11 @@ class NetworkThumbnailLoader(ThumbnailLoaderBase):
         self._plugin = plugin
         self._plugin_id = plugin.plugin_id
 
-    def set_assets(self, assets: list[StandardAsset]) -> None:
-        """Set the assets to fetch thumbnails for."""
-        self.set_items(assets)
+    def set_items_to_fetch(self, items: list[Browsable]) -> None:
+        """Set the items to fetch thumbnails for."""
+        self.set_items(items)
 
-    def _process_item(self, item: StandardAsset) -> None:
+    def _process_item(self, item: Browsable) -> None:
         """
         Process a single asset by fetching its thumbnail.
 
@@ -98,7 +99,7 @@ class NetworkThumbnailLoader(ThumbnailLoaderBase):
         thumb_path = self._fetch_thumbnail_sync(item)
         self.thumbnail_ready.emit(item.id, thumb_path)
 
-    def _fetch_thumbnail_sync(self, asset: StandardAsset) -> "Path | None":
+    def _fetch_thumbnail_sync(self, item: Browsable) -> "Path | None":
         """
         Fetch a single thumbnail using synchronous HTTP (urllib).
 
@@ -107,11 +108,11 @@ class NetworkThumbnailLoader(ThumbnailLoaderBase):
         import urllib.request  # use instead of requests to minimize dependencies
         import urllib.error
 
-        thumbnail_url = asset.thumbnail_url
+        thumbnail_url = item.thumbnail_url
         if not thumbnail_url:
             return None
 
-        cache_path = get_thumbnail_cache_path(asset, self._plugin_id)
+        cache_path = get_thumbnail_cache_path(item, self._plugin_id)
 
         if cache_path.exists():
             return cache_path
@@ -130,15 +131,15 @@ class NetworkThumbnailLoader(ThumbnailLoaderBase):
             with open(cache_path, "wb") as f:
                 f.write(data)
 
-            logger.debug(f"Downloaded thumbnail for {asset.name}")
+            logger.debug(f"Downloaded thumbnail for {item.name}")
             return cache_path
 
         except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
-            logger.debug(f"Failed to fetch thumbnail for {asset.name}: {e}")
+            logger.debug(f"Failed to fetch thumbnail for {item.name}: {e}")
             return None
         except Exception as e:
             logger.debug(
-                f"Unexpected error fetching thumbnail for {asset.name}: {e}")
+                f"Unexpected error fetching thumbnail for {item.name}: {e}")
             return None
 
 
@@ -164,7 +165,8 @@ class TabPresenter(QObject):
     """
 
     status_message = Signal(str)  # Message to display in status bar
-    download_complete = Signal()  # Emitted after successful download
+    # payload: dict with downloaded IDs, etc.
+    download_complete = Signal(object)
 
     def __init__(
         self,
@@ -181,7 +183,17 @@ class TabPresenter(QObject):
 
         self._current_task: asyncio.Task | None = None
 
-        self._asset_cache: dict[str, StandardAsset] = {}
+        # current top-level items shown in the grid (assets and/or composites)
+        self._current_items: list[Browsable] = []
+
+        # cache of all known items by ID (includes expanded composite children)
+        self._item_cache: dict[str, Browsable] = {}
+
+        # child → parent composite ID mapping (built when composites are expanded)
+        self._parent_map: dict[str, str] = {}
+
+        # composite IDs that have been expanded (avoid re-fetching)
+        self._expanded_composites: set[str] = set()
 
         self._is_loading = False
 
@@ -212,7 +224,20 @@ class TabPresenter(QObject):
         self._view.search_requested.connect(self._on_search_requested)
         self._view.detail_requested.connect(self._on_detail_requested)
         self._view.import_requested.connect(self._on_import_requested)
+        # back-compat: existing BrowserView emits a single download_requested(item_id)
         self._view.download_requested.connect(self._on_download_requested)
+
+        # Forward-compat: tree/detail UI will emit separate download signals
+        download_asset_sig = getattr(
+            self._view, "download_asset_requested", None)
+        if download_asset_sig is not None:
+            download_asset_sig.connect(self._on_download_asset_requested)
+
+        download_comp_sig = getattr(
+            self._view, "download_composite_requested", None)
+        if download_comp_sig is not None:
+            download_comp_sig.connect(self._on_download_composite_requested)
+
         self._view.remove_requested.connect(self._on_remove_requested)
         self._view.new_asset_requested.connect(self._on_new_asset_requested)
         self._view.replace_asset_requested.connect(
@@ -270,18 +295,22 @@ class TabPresenter(QObject):
         self._view.set_loading(True)
 
         try:
-            assets = await self._plugin.search(query)
+            items = await self._plugin.search(query)
 
-            self._asset_cache.clear()
-            for asset in assets:
-                self._asset_cache[asset.id] = asset
+            self._current_items = list(items)
+            self._item_cache.clear()
+            self._parent_map.clear()
+            self._expanded_composites.clear()
 
-            self._view.set_items(assets)
+            for item in items:
+                self._item_cache[item.id] = item
 
-            logger.info(f"Search complete: {len(assets)} assets found")
-            self.status_message.emit(f"Found {len(assets)} assets")
+            self._view.set_items(items)
 
-            self._queue_thumbnail_fetch(assets)
+            logger.info(f"Search complete: {len(items)} items found")
+            self.status_message.emit(f"Found {len(items)} items")
+
+            self._queue_thumbnail_fetch(items)
 
         except asyncio.CancelledError:
             logger.debug("Search cancelled")
@@ -294,7 +323,7 @@ class TabPresenter(QObject):
             self._is_loading = False
             self._view.set_loading(False)
 
-    def _queue_thumbnail_fetch(self, assets: list[StandardAsset]) -> None:
+    def _queue_thumbnail_fetch(self, items: list[Browsable]) -> None:
         """
         Queue thumbnails for background fetching using a worker thread.
 
@@ -302,29 +331,29 @@ class TabPresenter(QObject):
         Only queues assets that actually need to be downloaded.
         """
         plugin_id = self._plugin.plugin_id
-        assets_needing_download: list[StandardAsset] = []
+        items_needing_download: list[Browsable] = []
         cached_count = 0
 
-        for asset in assets:
-            if not asset.thumbnail_url:
+        for item in items:
+            if not item.thumbnail_url:
                 continue
 
-            if asset.thumbnail_path and asset.thumbnail_path.exists():
+            if item.thumbnail_path and item.thumbnail_path.exists():
                 continue
 
-            cache_path = get_thumbnail_cache_path(asset, plugin_id)
+            cache_path = get_thumbnail_cache_path(item, plugin_id)
             if cache_path.exists():
-                asset.thumbnail_path = cache_path
-                self._asset_cache[asset.id] = asset
+                item.thumbnail_path = cache_path
+                self._item_cache[item.id] = item
                 cached_count += 1
             else:
-                assets_needing_download.append(asset)
+                items_needing_download.append(item)
 
         if cached_count > 0:
             logger.debug(f"Found {cached_count} cached thumbnails on disk")
-            self._view.set_items(list(self._asset_cache.values()))
+            self._view.set_items(self._current_items)
 
-        if not assets_needing_download:
+        if not items_needing_download:
             logger.debug("All thumbnails already cached")
             return
 
@@ -333,7 +362,7 @@ class TabPresenter(QObject):
             return
 
         logger.debug(
-            f"Queueing {len(assets_needing_download)} thumbnails for download")
+            f"Queueing {len(items_needing_download)} thumbnails for download")
 
         if self._thumbnail_worker is not None:
             self._thumbnail_worker.request_stop()
@@ -347,84 +376,145 @@ class TabPresenter(QObject):
             self._on_thumbnail_batch_complete)
         self._thumbnail_worker.all_complete.connect(
             self._on_thumbnails_complete)
-        self._thumbnail_worker.set_assets(assets_needing_download)
+        self._thumbnail_worker.set_items_to_fetch(items_needing_download)
         self._thumbnail_worker.start()
 
     @Slot(str, object)
-    def _on_thumbnail_ready(self, asset_id: str, thumb_path) -> None:
+    def _on_thumbnail_ready(self, item_id: str, thumb_path) -> None:
         """Handle a thumbnail being ready (called on main thread via signal)."""
-        if thumb_path and asset_id in self._asset_cache:
-            asset = self._asset_cache[asset_id]
-            asset.thumbnail_path = thumb_path
-            self._asset_cache[asset_id] = asset
+        if thumb_path and item_id in self._item_cache:
+            item = self._item_cache[item_id]
+            item.thumbnail_path = thumb_path
+            self._item_cache[item_id] = item
 
     @Slot()
     def _on_thumbnail_batch_complete(self) -> None:
         """Handle a batch of thumbnails being complete - update the view."""
-        self._view.set_items(list(self._asset_cache.values()))
+        self._view.set_items(self._current_items)
 
     @Slot()
     def _on_thumbnails_complete(self) -> None:
         """Handle all thumbnails being complete - final view update."""
-        self._view.set_items(list(self._asset_cache.values()))
+        self._view.set_items(self._current_items)
         logger.debug("All thumbnails fetched")
 
     # Keep async versions for compatibility with code that uses qasync
-    async def _fetch_thumbnails(self, assets: list[StandardAsset]) -> None:
-        """Fetch thumbnails for assets that have URLs but no local path."""
-        assets_needing_thumbs = [
-            a for a in assets
-            if a.thumbnail_url and (not a.thumbnail_path or not a.thumbnail_path.exists())
+    async def _fetch_thumbnails(self, items: list[Browsable]) -> None:
+        """Fetch thumbnails for items that have URLs but no local path."""
+        items_needing_thumbs = [
+            i
+            for i in items
+            if i.thumbnail_url and (not i.thumbnail_path or not i.thumbnail_path.exists())
         ]
 
-        if not assets_needing_thumbs:
+        if not items_needing_thumbs:
             return
 
-        logger.debug(f"Fetching {len(assets_needing_thumbs)} thumbnails")
+        logger.debug(f"Fetching {len(items_needing_thumbs)} thumbnails")
 
         if not hasattr(self._plugin, "download_thumbnail"):
             logger.debug("Plugin does not support thumbnail downloading")
             return
 
         batch_size = 10
-        for i in range(0, len(assets_needing_thumbs), batch_size):
-            batch = assets_needing_thumbs[i:i + batch_size]
+        for i in range(0, len(items_needing_thumbs), batch_size):
+            batch = items_needing_thumbs[i:i + batch_size]
             tasks = []
-            for asset in batch:
-                tasks.append(self._fetch_single_thumbnail(asset))
+            for item in batch:
+                tasks.append(self._fetch_single_thumbnail(item))
 
             await asyncio.gather(*tasks, return_exceptions=True)
-            self._view.set_items(list(self._asset_cache.values()))
+            self._view.set_items(self._current_items)
 
-    async def _fetch_single_thumbnail(self, asset: StandardAsset) -> None:
-        """Fetch thumbnail for a single asset."""
+    async def _fetch_single_thumbnail(self, item: Browsable) -> None:
+        """Fetch thumbnail for a single item."""
         try:
-            thumb_path = await self._plugin.download_thumbnail(asset)
+            # type: ignore[attr-defined]
+            thumb_path = await self._plugin.download_thumbnail(item)
             if thumb_path:
-                asset.thumbnail_path = thumb_path
-                self._asset_cache[asset.id] = asset
-                logger.debug(f"Thumbnail fetched for {asset.name}")
+                item.thumbnail_path = thumb_path
+                self._item_cache[item.id] = item
+                logger.debug(f"Thumbnail fetched for {item.name}")
         except Exception as e:
-            logger.debug(f"Failed to fetch thumbnail for {asset.name}: {e}")
+            logger.debug(f"Failed to fetch thumbnail for {item.name}: {e}")
+
+    def _index_composite_tree(self, composite: CompositeAsset) -> None:
+        """Index a composite and all descendants into caches."""
+        self._item_cache[composite.id] = composite
+        for child in composite.children:
+            if isinstance(child, CompositeAsset):
+                self._parent_map[child.id] = composite.id
+                self._index_composite_tree(child)
+            elif isinstance(child, (Asset, StandardAsset)):
+                self._parent_map[child.id] = composite.id
+                self._item_cache[child.id] = child
+
+    def _replace_current_item(self, item: Browsable) -> None:
+        """Replace a top-level item in-place (by ID) if present."""
+        for idx, existing in enumerate(self._current_items):
+            if existing.id == item.id:
+                self._current_items[idx] = item
+                break
+
+    def _as_standard_asset(self, item: Browsable) -> StandardAsset:
+        """Convert an Asset to StandardAsset for host APIs."""
+        # TODO: come back to this
+        if isinstance(item, StandardAsset):
+            return item
+        if isinstance(item, Asset):
+            return StandardAsset(
+                id=item.id,
+                source=item.source,
+                external_id=item.external_id,
+                name=item.name,
+                type=item.asset_type,
+                status=item.status,
+                local_path=item.local_path,
+                thumbnail_url=item.thumbnail_url or "",
+                thumbnail_path=item.thumbnail_path,
+                metadata=item.metadata.copy()
+                if isinstance(item.metadata, dict)
+                else {},
+            )
+        raise TypeError(f"Cannot convert to StandardAsset: {type(item)}")
 
     @Slot(str)
-    def _on_detail_requested(self, asset_id: str) -> None:
+    def _on_detail_requested(self, item_id: str) -> None:
         """Handle detail view request."""
-        asset = self._asset_cache.get(asset_id)
-        if asset:
-            self._view.show_detail(asset)
-        else:
-            logger.warning(f"Asset not found in cache: {asset_id}")
+        self._run_async(self._do_show_detail(item_id))
 
-    @Slot(str)
-    def _on_import_requested(self, asset_id: str) -> None:
-        """Handle import request."""
-        asset = self._asset_cache.get(asset_id)
-        if not asset:
-            logger.warning(f"Asset not found for import: {asset_id}")
+    async def _do_show_detail(self, item_id: str) -> None:
+        """Show detail view for an item, expanding composites lazily."""
+        item = self._item_cache.get(item_id)
+        if not item:
+            logger.warning(f"Item not found in cache: {item_id}")
             return
 
-        self._run_async(self._do_import(asset))
+        if isinstance(item, CompositeAsset) and not item.children and item.id not in self._expanded_composites:
+            try:
+                expanded = await self._plugin.expand_composite(item)
+                self._expanded_composites.add(item.id)
+                self._replace_current_item(expanded)
+                self._index_composite_tree(expanded)
+                item = expanded
+            except NotImplementedError:
+                logger.debug("Plugin does not implement expand_composite()")
+            except Exception as e:
+                logger.error(f"Failed to expand composite {item.name}: {e}")
+                self.status_message.emit(f"Failed to expand {item.name}: {e}")
+
+        # UI will be updated to support composites
+        self._view.show_detail(item)
+
+    @Slot(str)
+    def _on_import_requested(self, item_id: str) -> None:
+        """Handle import request."""
+        item = self._item_cache.get(item_id)
+        if not item:
+            logger.warning(f"Item not found for import: {item_id}")
+            return
+
+        self._run_async(self._do_import(item))
 
     @Slot(str)
     def _on_new_asset_requested(self, asset_id: str) -> None:
@@ -444,12 +534,17 @@ class TabPresenter(QObject):
         Updates the currently selected node with the new asset data.
         Only available in hosts that support node selection (e.g., Houdini).
         """
-        asset = self._asset_cache.get(asset_id)
-        if not asset:
-            logger.warning(f"Asset not found for replace: {asset_id}")
+        item = self._item_cache.get(asset_id)
+        if not item:
+            logger.warning(f"Item not found for replace: {asset_id}")
+            return
+        if isinstance(item, CompositeAsset):
+            logger.warning(
+                f"Cannot replace selection with composite: {item.name}")
             return
 
         try:
+            asset = self._as_standard_asset(item)
             self.status_message.emit(f"Replacing with {asset.name}...")
             self._host.update_selection(asset)
             self.status_message.emit(f"Replaced with {asset.name}")
@@ -457,22 +552,51 @@ class TabPresenter(QObject):
             logger.error(f"Replace failed: {e}")
             self.status_message.emit(f"Replace failed: {e}")
 
-    async def _do_import(self, asset: StandardAsset) -> None:
-        """Execute import asynchronously."""
+    async def _do_import(self, item: Browsable) -> None:
+        """Execute import asynchronously (asset or composite)."""
         try:
-            if asset.status == AssetStatus.CLOUD:
-                self.status_message.emit(f"Downloading {asset.name}...")
-                asset = await self._do_download_for_import(asset)
-                if asset.status != AssetStatus.LOCAL:
+            if isinstance(item, CompositeAsset):
+                # Ensure composite is expanded before import
+                if not item.children and item.id not in self._expanded_composites:
+                    item = await self._plugin.expand_composite(item)
+                    self._expanded_composites.add(item.id)
+                    self._replace_current_item(item)
+                    self._index_composite_tree(item)
+
+                schema = self._plugin.get_settings_schema(item)
+                options: dict[str, Any] = {}
+                if schema:
+                    options = self._show_settings_dialog(schema, item)
+                    if options is None:
+                        logger.info("Import cancelled by user")
+                        return
+                options["renderer"] = self._view.get_selected_renderer()
+
+                self.status_message.emit(f"Importing {item.name}...")
+                # type: ignore[attr-defined]
+                self._host.import_composite(item, options)
+                self.status_message.emit(f"Imported {item.name}")
+                return
+
+            # Asset import (single leaf)
+            asset_item: Browsable = item
+            status = getattr(asset_item, "status", asset_item.display_status)
+            if status == AssetStatus.CLOUD:
+                self.status_message.emit(f"Downloading {asset_item.name}...")
+                asset_item = await self._do_download_for_import(asset_item)
+                status = getattr(asset_item, "status",
+                                 asset_item.display_status)
+                if status != AssetStatus.LOCAL:
                     self.status_message.emit(
                         "Download failed, import cancelled")
                     return
 
-            schema = self._plugin.get_settings_schema(asset)
+            schema = self._plugin.get_settings_schema(
+                asset_item)  # type: ignore[arg-type]
             options: dict[str, Any] = {}
 
             if schema:
-                options = self._show_settings_dialog(schema, asset)
+                options = self._show_settings_dialog(schema, asset_item)
                 if options is None:
                     # User cancelled
                     logger.info("Import cancelled by user")
@@ -480,31 +604,38 @@ class TabPresenter(QObject):
 
             options["renderer"] = self._view.get_selected_renderer()
 
-            self.status_message.emit(f"Importing {asset.name}...")
-            self._host.import_asset(asset, options)
-            self.status_message.emit(f"Imported {asset.name}")
+            std_asset = self._as_standard_asset(asset_item)
+            self.status_message.emit(f"Importing {std_asset.name}...")
+            self._host.import_asset(std_asset, options)
+            self.status_message.emit(f"Imported {std_asset.name}")
 
         except Exception as e:
             logger.error(f"Import failed: {e}")
             self.status_message.emit(f"Import failed: {e}")
 
-    async def _do_download_for_import(self, asset: StandardAsset) -> StandardAsset:
+    async def _do_download_for_import(self, item: Browsable) -> Browsable:
         """Download an asset as part of import flow."""
         try:
-            # TODO: Make resolution configurable and handle LOD's
-            resolution = "2k"
+            # For legacy StandardAsset plugins, fall back to `download()`.
+            if isinstance(item, StandardAsset) and hasattr(self._plugin, "download"):
+                resolution = "2k"
+                # type: ignore[attr-defined]
+                updated = await self._plugin.download(item, resolution)
+                self._item_cache[updated.id] = updated
+                return updated
 
-            updated_asset = await self._plugin.download(asset, resolution)
+            if isinstance(item, Asset):
+                updated = await self._plugin.download_asset(item)
+                self._item_cache[updated.id] = updated
+                return updated
 
-            self._asset_cache[updated_asset.id] = updated_asset
-
-            return updated_asset
+            return item
         except Exception as e:
             logger.error(f"Download for import failed: {e}")
-            return asset
+            return item
 
     def _show_settings_dialog(
-        self, schema: dict[str, Any], asset: StandardAsset
+        self, schema: dict[str, Any], item: Browsable
     ) -> dict[str, Any] | None:
         """
         Show settings dialog based on schema.
@@ -517,7 +648,7 @@ class TabPresenter(QObject):
             Dict of settings values, or None if cancelled
         """
         dialog = QDialog(self._view)
-        dialog.setWindowTitle(f"Import Settings - {asset.name}")
+        dialog.setWindowTitle(f"Import Settings - {item.name}")
         dialog.setMinimumWidth(300)
 
         layout = QFormLayout(dialog)
@@ -571,57 +702,159 @@ class TabPresenter(QObject):
         return None
 
     @Slot(str)
-    def _on_download_requested(self, asset_id: str) -> None:
-        """Handle download request."""
-        asset = self._asset_cache.get(asset_id)
-        if not asset:
-            logger.warning(f"Asset not found for download: {asset_id}")
+    def _on_download_requested(self, item_id: str) -> None:
+        """Handle download request (back-compat signal)."""
+        item = self._item_cache.get(item_id)
+        if not item:
+            logger.warning(f"Item not found for download: {item_id}")
             return
 
-        if asset.status != AssetStatus.CLOUD:
-            logger.info(f"Asset {asset_id} is not a cloud asset")
+        if isinstance(item, CompositeAsset):
+            self._on_download_composite_requested(item_id, None)
             return
 
-        self._run_async(self._do_download(asset))
+        self._on_download_asset_requested(item_id)
 
-    async def _do_download(self, asset: StandardAsset) -> None:
-        """Execute download asynchronously."""
-        original_status = asset.status
+    @Slot(str)
+    def _on_download_asset_requested(self, asset_id: str) -> None:
+        """Handle request to download a single Asset."""
+        self._run_async(self._do_download_asset(asset_id))
 
+    @Slot(str, object)
+    def _on_download_composite_requested(self, composite_id: str, resolution) -> None:
+        """Handle request to download a composite (optionally filtered by resolution)."""
+        resolution_str = resolution if isinstance(resolution, str) else None
+        self._run_async(self._do_download_composite(
+            composite_id, resolution_str))
+
+    def _replace_child_in_parent(self, child_id: str, new_child: Browsable) -> None:
+        """Replace a cached child item inside its parent composite (if known)."""
+        parent_id = self._parent_map.get(child_id)
+        if not parent_id:
+            return
+        parent = self._item_cache.get(parent_id)
+        if not isinstance(parent, CompositeAsset):
+            return
+
+        for idx, existing in enumerate(parent.children):
+            if getattr(existing, "id", None) == new_child.id:
+                parent.children[idx] = new_child  # type: ignore[list-item]
+                break
+
+    def _refresh_items_in_view(self) -> None:
+        """Refresh view with current top-level items."""
+        self._view.set_items(self._current_items)
+
+    async def _do_download_asset(self, asset_id: str) -> None:
+        """Execute a single-asset download asynchronously."""
+        item = self._item_cache.get(asset_id)
+        if not item:
+            logger.warning(f"Item not found for download: {asset_id}")
+            return
+        if isinstance(item, CompositeAsset):
+            logger.warning(
+                f"Cannot download composite via asset handler: {item.name}")
+            return
+
+        status = getattr(item, "status", item.display_status)
+        if status != AssetStatus.CLOUD:
+            logger.info(f"Item {asset_id} is not a cloud asset")
+            return
+
+        original_status = status
         try:
-            asset.status = AssetStatus.DOWNLOADING
-            self._refresh_asset_in_view(asset)
-            self._view.set_download_progress(asset.id, 0.0)
+            # Update UI to DOWNLOADING (only applies to leaf assets)
+            if hasattr(item, "status"):
+                # type: ignore[attr-defined]
+                item.status = AssetStatus.DOWNLOADING
+            self._item_cache[item.id] = item
+            self._replace_child_in_parent(item.id, item)
+            self._refresh_items_in_view()
+            self._view.set_download_progress(item.id, 0.0)
 
-            self.status_message.emit(f"Downloading {asset.name}...")
+            self.status_message.emit(f"Downloading {item.name}...")
 
-            # TODO: Add progress callback support to plugin.download()
-            resolution = "2k"  # TODO: Make resolution configurable and handle LOD's
-            updated_asset = await self._plugin.download(asset, resolution)
+            updated: Browsable
+            if isinstance(item, Asset):
+                updated = await self._plugin.download_asset(item)
+            elif isinstance(item, StandardAsset) and hasattr(self._plugin, "download"):
+                resolution = "2k"
+                # type: ignore[attr-defined]
+                updated = await self._plugin.download(item, resolution)
+            else:
+                raise NotImplementedError(
+                    f"Plugin does not support downloading this item type: {type(item)}"
+                )
 
-            self._asset_cache[updated_asset.id] = updated_asset
-            self._refresh_asset_in_view(updated_asset)
-            self._view.set_download_progress(asset.id, 1.0)
+            self._item_cache[updated.id] = updated
+            self._replace_current_item(updated)
+            self._replace_child_in_parent(updated.id, updated)
+            self._refresh_items_in_view()
+            self._view.set_download_progress(updated.id, 1.0)
 
-            self.status_message.emit(f"Downloaded {asset.name}")
-            logger.info(f"Download complete: {asset.name}")
+            self.status_message.emit(f"Downloaded {updated.name}")
+            logger.info(f"Download complete: {updated.name}")
 
-            self.download_complete.emit()
+            self.download_complete.emit(
+                {"source": self._plugin.plugin_id,
+                    "downloaded_item_ids": [updated.id]}
+            )
 
         except Exception as e:
             logger.error(f"Download failed: {e}")
             self.status_message.emit(f"Download failed: {e}")
 
-            asset.status = original_status
-            self._refresh_asset_in_view(asset)
-            self._view.set_download_progress(asset.id, -1)
+            # Restore status if possible
+            if hasattr(item, "status"):
+                item.status = original_status  # type: ignore[attr-defined]
+            self._item_cache[item.id] = item
+            self._replace_child_in_parent(item.id, item)
+            self._refresh_items_in_view()
+            self._view.set_download_progress(item.id, -1)
+
+    async def _do_download_composite(self, composite_id: str, resolution: str | None) -> None:
+        """Execute a composite download asynchronously."""
+        item = self._item_cache.get(composite_id)
+        if not isinstance(item, CompositeAsset):
+            logger.warning(f"Composite not found for download: {composite_id}")
+            return
+
+        try:
+            self.status_message.emit(f"Downloading {item.name}...")
+            updated = await self._plugin.download_composite(item, resolution=resolution, recursive=True)
+
+            # Replace + re-index expanded tree
+            self._expanded_composites.add(updated.id)
+            self._replace_current_item(updated)
+            self._index_composite_tree(updated)
+
+            self._refresh_items_in_view()
+
+            downloaded_asset_ids = [
+                a.id
+                for a in updated.get_all_assets()
+                if isinstance(a, Asset) and a.status == AssetStatus.LOCAL
+            ]
+            self.status_message.emit(f"Downloaded {updated.name}")
+
+            self.download_complete.emit(
+                {"source": self._plugin.plugin_id,
+                    "downloaded_item_ids": downloaded_asset_ids}
+            )
+
+        except Exception as e:
+            logger.error(f"Composite download failed: {e}")
+            self.status_message.emit(f"Composite download failed: {e}")
 
     @Slot(str)
-    def _on_remove_requested(self, asset_id: str) -> None:
+    def _on_remove_requested(self, item_id: str) -> None:
         """Handle remove request."""
-        asset = self._asset_cache.get(asset_id)
-        if not asset:
-            logger.warning(f"Asset not found for removal: {asset_id}")
+        item = self._item_cache.get(item_id)
+        if not item:
+            logger.warning(f"Item not found for removal: {item_id}")
+            return
+        if isinstance(item, CompositeAsset):
+            logger.info("Removal is not supported for composites")
             return
 
         if not self._plugin.can_remove:
@@ -631,26 +864,29 @@ class TabPresenter(QObject):
         reply = QMessageBox.question(
             self._view,
             "Remove Asset",
-            f"Remove '{asset.name}' from the library?\n\n"
+            f"Remove '{item.name}' from the library?\n\n"
             "This will delete the local files.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            self._run_async(self._do_remove(asset))
+            self._run_async(self._do_remove(item_id))
 
-    async def _do_remove(self, asset: StandardAsset) -> None:
+    async def _do_remove(self, item_id: str) -> None:
         """Execute removal asynchronously."""
         try:
-            # TODO: Call plugin.remove() when available
-            if asset.id in self._asset_cache:
-                del self._asset_cache[asset.id]
+            item = self._item_cache.get(item_id)
+            if not item:
+                return
 
-            # Refresh the view
-            # TODO: write a dedicated refresh method for this, unclear intent
-            self._view.set_items(list(self._asset_cache.values()))
-            self.status_message.emit(f"Removed {asset.name}")
+            # TODO: Call plugin.remove() when available
+            self._item_cache.pop(item_id, None)
+            self._current_items = [
+                i for i in self._current_items if i.id != item_id]
+
+            self._refresh_items_in_view()
+            self.status_message.emit(f"Removed {item.name}")
 
         except Exception as e:
             logger.error(f"Remove failed: {e}")
@@ -729,9 +965,10 @@ class TabPresenter(QObject):
 
             if added_assets:
                 for asset in added_assets:
-                    self._asset_cache[asset.id] = asset
+                    self._item_cache[asset.id] = asset
+                    self._current_items.append(asset)
 
-                self._view.set_items(list(self._asset_cache.values()))
+                self._refresh_items_in_view()
 
                 self.status_message.emit(f"Added {len(added_assets)} assets")
                 logger.info(f"Added {len(added_assets)} assets")
@@ -742,10 +979,9 @@ class TabPresenter(QObject):
             logger.error(f"Failed to add assets: {e}")
             self.status_message.emit(f"Failed to add assets: {e}")
 
-    def _refresh_asset_in_view(self, asset: StandardAsset) -> None:
-        """Refresh a single asset in the view."""
-        # TODO: optimize, no need to refresh the entire list.
-        self._view.set_items(list(self._asset_cache.values()))
+    def _refresh_asset_in_view(self, asset: Browsable) -> None:
+        """Refresh items in the view (legacy helper)."""
+        self._refresh_items_in_view()
 
     # PUBLIC API
 
@@ -786,7 +1022,10 @@ class TabPresenter(QObject):
             self._thumbnail_worker.deleteLater()
             self._thumbnail_worker = None
 
-        self._asset_cache.clear()
+        self._current_items.clear()
+        self._item_cache.clear()
+        self._parent_map.clear()
+        self._expanded_composites.clear()
 
         logger.debug(
             f"TabPresenter cleaned up for plugin: {self._plugin.plugin_id}")

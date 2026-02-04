@@ -248,6 +248,17 @@ class HostIntegration(ABC):
         """
         ...
 
+    def import_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
+        """
+        Import a `CompositeAsset` into the host.
+
+        Default implementation is not provided; host integrations should
+        override this as composite support is introduced.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement import_composite()"
+        )
+
     @abstractmethod
     def update_selection(self, asset: StandardAsset) -> None:
         """

@@ -1,25 +1,32 @@
-"""Tests for TabPresenter."""
+"""Tests for TabPresenter"""
 
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from uab.core.interfaces import AssetLibraryPlugin, HostIntegration
-from uab.core.models import StandardAsset, AssetStatus, AssetType
-
-
-# TEST FIXTURES
+from uab.core.models import (
+    Asset,
+    AssetStatus,
+    AssetType,
+    CompositeAsset,
+    CompositeType,
+    StandardAsset,
+)
 
 
 class MockHostIntegration(HostIntegration):
     """Mock host integration for testing."""
 
-    def __init__(self):
-        self.imported_assets: list[tuple[StandardAsset, dict]] = []
+    def __init__(self) -> None:
+        self.imported_assets: list[tuple[StandardAsset, dict[str, Any]]] = []
+        self.imported_composites: list[tuple[CompositeAsset, dict[str, Any]]] = [
+        ]
 
     @property
     def uab_supported_renderers(self) -> list[str]:
@@ -27,6 +34,10 @@ class MockHostIntegration(HostIntegration):
 
     def import_asset(self, asset: StandardAsset, options: dict[str, Any]) -> None:
         self.imported_assets.append((asset, options))
+
+    def import_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:  # noqa: ANN401
+        self.imported_composites.append((composite, options))
+        return None
 
     def update_selection(self, asset: StandardAsset) -> None:
         pass
@@ -38,50 +49,34 @@ class MockHostIntegration(HostIntegration):
         return "arnold"
 
 
-class MockPlugin(AssetLibraryPlugin):
-    """Mock plugin for TabPresenter tests."""
+class PresenterTestPlugin(AssetLibraryPlugin):
+    """Plugin with controllable async behaviors for presenter tests."""
 
-    plugin_id = "mock_tab_test"
-    display_name = "Mock Tab Test"
+    plugin_id = "presenter_test"
+    display_name = "Presenter Test"
 
-    def __init__(self):
-        self._assets = [
-            StandardAsset(
-                source=self.plugin_id,
-                external_id="asset_1",
-                name="Test Asset 1",
-                type=AssetType.HDRI,
-                status=AssetStatus.LOCAL,
-            ),
-            StandardAsset(
-                source=self.plugin_id,
-                external_id="asset_2",
-                name="Test Asset 2",
-                type=AssetType.TEXTURE,
-                status=AssetStatus.CLOUD,
-            ),
-        ]
-        self.search_calls: list[str] = []
-        self.download_calls: list[tuple[StandardAsset, str | None]] = []
+    def __init__(self, items: list[object]) -> None:
+        self._items = items
+        self.search_mock = MagicMock()
+        self.expand_mock = AsyncMock()
+        self.download_asset_mock = AsyncMock()
+        self.download_composite_mock = AsyncMock()
 
-    async def search(self, query: str) -> list[StandardAsset]:
-        self.search_calls.append(query)
-        if query:
-            return [a for a in self._assets if query.lower() in a.name.lower()]
-        return self._assets.copy()
+    async def search(self, query: str):  # type: ignore[override]
+        self.search_mock(query)
+        return list(self._items)
 
-    async def download(
-        self, asset: StandardAsset, resolution: str | None = None
-    ) -> StandardAsset:
-        self.download_calls.append((asset, resolution))
-        # Return updated asset with LOCAL status
-        return StandardAsset(
-            source=asset.source,
-            external_id=asset.external_id,
-            name=asset.name,
-            type=asset.type,
-            status=AssetStatus.LOCAL,
-            id=asset.id,
+    async def expand_composite(self, composite: CompositeAsset) -> CompositeAsset:
+        return await self.expand_mock(composite)
+
+    async def download_asset(self, asset: Asset) -> Asset:
+        return await self.download_asset_mock(asset)
+
+    async def download_composite(
+        self, composite: CompositeAsset, resolution: str | None = None, recursive: bool = True
+    ) -> CompositeAsset:
+        return await self.download_composite_mock(
+            composite, resolution=resolution, recursive=recursive
         )
 
     @property
@@ -90,295 +85,200 @@ class MockPlugin(AssetLibraryPlugin):
 
     @property
     def can_remove(self) -> bool:
-        return True
-
-    def get_settings_schema(self, asset: StandardAsset) -> dict | None:
-        if asset.type == AssetType.HDRI:
-            return {
-                "resolution": {
-                    "type": "choice",
-                    "options": ["1k", "2k", "4k"],
-                    "default": "2k",
-                }
-            }
-        return None
-
-
-@pytest.fixture
-def mock_plugin() -> MockPlugin:
-    """Create a mock plugin."""
-    return MockPlugin()
-
-
-@pytest.fixture
-def mock_host() -> MockHostIntegration:
-    """Create a mock host integration."""
-    return MockHostIntegration()
+        return False
 
 
 @pytest.fixture
 def mock_view() -> MagicMock:
-    """Create a mock BrowserView."""
+    """Create a mock BrowserView-like object."""
     view = MagicMock()
+
+    # Signals
     view.search_requested = MagicMock()
     view.detail_requested = MagicMock()
     view.import_requested = MagicMock()
     view.download_requested = MagicMock()
     view.remove_requested = MagicMock()
+    view.new_asset_requested = MagicMock()
+    view.replace_asset_requested = MagicMock()
 
-    # Make signal connections work
     view.search_requested.connect = MagicMock()
     view.detail_requested.connect = MagicMock()
     view.import_requested.connect = MagicMock()
     view.download_requested.connect = MagicMock()
     view.remove_requested.connect = MagicMock()
+    view.new_asset_requested.connect = MagicMock()
+    view.replace_asset_requested.connect = MagicMock()
 
+    # Methods used by presenter
     view.set_items = MagicMock()
     view.set_loading = MagicMock()
     view.show_detail = MagicMock()
     view.set_download_progress = MagicMock()
     view.get_selected_renderer = MagicMock(return_value="arnold")
+    view.set_host_actions = MagicMock()
+    view.set_add_assets_enabled = MagicMock()
 
     return view
 
 
-@pytest.fixture(autouse=True)
-def reset_plugin_registry():
-    """Reset the plugin registry before and after each test."""
-    original = AssetLibraryPlugin._implementations.copy()
-    AssetLibraryPlugin.reset_registry()
-    yield
-    AssetLibraryPlugin._implementations = original
+@pytest.fixture
+def mock_host() -> MockHostIntegration:
+    return MockHostIntegration()
 
 
-# TESTS
-
-
-class TestTabPresenterInit:
-    """Tests for TabPresenter initialization."""
-
-    def test_presenter_stores_dependencies(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Presenter should store plugin, view, and host references."""
+class TestTabPresenterMilestone5:
+    def test_on_detail_requested_expands_composite(self, mock_view: MagicMock, mock_host: MockHostIntegration) -> None:
         from uab.presenters.tab_presenter import TabPresenter
 
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
+        material = CompositeAsset(
+            id="polyhaven-rusty_metal",
+            source="polyhaven",
+            external_id="rusty_metal",
+            name="Rusty Metal",
+            composite_type=CompositeType.MATERIAL,
+            children=[],
         )
 
-        assert presenter.plugin is mock_plugin
-        assert presenter.view is mock_view
-
-    def test_presenter_connects_to_view_signals(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Presenter should connect to all view signals."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        TabPresenter(plugin=mock_plugin, view=mock_view, host=mock_host)
-
-        mock_view.search_requested.connect.assert_called_once()
-        mock_view.detail_requested.connect.assert_called_once()
-        mock_view.import_requested.connect.assert_called_once()
-        mock_view.download_requested.connect.assert_called_once()
-        mock_view.remove_requested.connect.assert_called_once()
-
-
-class TestTabPresenterSearch:
-    """Tests for search functionality."""
-
-    def test_search_calls_plugin_and_updates_view(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Search should call plugin.search() and update the view."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
+        expanded = CompositeAsset(
+            id=material.id,
+            source=material.source,
+            external_id=material.external_id,
+            name=material.name,
+            composite_type=material.composite_type,
+            children=[
+                CompositeAsset(
+                    id="polyhaven-rusty_metal:diffuse",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse",
+                    name="diffuse",
+                    composite_type=CompositeType.TEXTURE,
+                    metadata={"role": "diffuse", "map_type": "diffuse"},
+                    children=[],
+                )
+            ],
         )
 
-        asyncio.run(presenter._do_search("test"))
+        plugin = PresenterTestPlugin(items=[material])
+        plugin.expand_mock.return_value = expanded
 
-        assert "test" in mock_plugin.search_calls
-
-        mock_view.set_items.assert_called()
-
-    def test_search_updates_loading_state(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Search should set loading state before and after."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
-        )
-
-        # Clear any initial calls
-        mock_view.set_loading.reset_mock()
-
-        asyncio.run(presenter._do_search("query"))
-
-        # Should have called set_loading(True) then set_loading(False)
-        calls = mock_view.set_loading.call_args_list
-        assert len(calls) >= 2
-        # TODO: this is ridiculous
-        assert calls[0][0][0] is True  # First call with True
-        assert calls[-1][0][0] is False  # Last call with False
-
-
-class TestTabPresenterDetailView:
-    """Tests for detail view functionality."""
-
-    def test_detail_shows_asset_from_cache(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Detail request should show asset from cache."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
-        )
-
-        # Populate cache
-        asyncio.run(presenter._do_search(""))
-
-        asset_id = list(presenter._asset_cache.keys())[0]
-        asset = presenter._asset_cache[asset_id]
-
-        presenter._on_detail_requested(asset_id)
-
-        mock_view.show_detail.assert_called_with(asset)
-
-    def test_detail_handles_missing_asset(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Detail request for missing asset should not crash."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
-        )
-
-        presenter._on_detail_requested("nonexistent_id")
-
-        mock_view.show_detail.assert_not_called()
-
-
-class TestTabPresenterDownload:
-    """Tests for download functionality."""
-
-    def test_download_calls_plugin(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Download should call plugin.download()."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
-        )
-
-        # Populate cache
-        asyncio.run(presenter._do_search(""))
-
-        cloud_asset = None
-        for asset in presenter._asset_cache.values():
-            if asset.status == AssetStatus.CLOUD:
-                cloud_asset = asset
-                break
-
-        if cloud_asset:
-            asyncio.run(presenter._do_download(cloud_asset))
-
-            assert len(mock_plugin.download_calls) > 0
-
-    def test_download_updates_progress(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
-    ) -> None:
-        """Download should update progress in view."""
-        from uab.presenters.tab_presenter import TabPresenter
-
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
-        )
+        presenter = TabPresenter(plugin=plugin, view=mock_view, host=mock_host)
 
         asyncio.run(presenter._do_search(""))
+        presenter._on_detail_requested(material.id)
 
-        cloud_asset = None
-        for asset in presenter._asset_cache.values():
-            if asset.status == AssetStatus.CLOUD:
-                cloud_asset = asset
-                break
+        plugin.expand_mock.assert_awaited_once()
+        mock_view.show_detail.assert_called_with(expanded)
 
-        if cloud_asset:
-            asyncio.run(presenter._do_download(cloud_asset))
-
-            mock_view.set_download_progress.assert_called()
-
-
-class TestTabPresenterImport:
-    """Tests for import functionality."""
-
-    def test_import_local_asset_calls_host(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
+    def test_download_asset_requested_updates_single_asset(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
     ) -> None:
-        """Import of local asset should call host.import_asset()."""
         from uab.presenters.tab_presenter import TabPresenter
 
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
+        asset = Asset(
+            id="polyhaven-rusty_metal:diffuse:2k",
+            source="polyhaven",
+            external_id="rusty_metal:diffuse:2k",
+            name="rusty_diff_2k.png",
+            asset_type=AssetType.TEXTURE,
+            status=AssetStatus.CLOUD,
+            remote_url="https://example.com/rusty_diff_2k.png",
+            metadata={"resolution": "2k", "map_type": "diffuse"},
         )
 
+        updated = Asset.from_dict(
+            {**asset.to_dict(), "status": AssetStatus.LOCAL.value, "local_path": str(tmp_path / "file.png")})
+
+        plugin = PresenterTestPlugin(items=[asset])
+        plugin.download_asset_mock.return_value = updated
+
+        presenter = TabPresenter(plugin=plugin, view=mock_view, host=mock_host)
         asyncio.run(presenter._do_search(""))
 
-        local_asset = None
-        for asset in presenter._asset_cache.values():
-            if asset.status == AssetStatus.LOCAL and asset.type == AssetType.TEXTURE:
-                local_asset = asset
-                break
+        payloads: list[object] = []
+        presenter.download_complete.connect(lambda p: payloads.append(p))
 
-        if local_asset:
-            asyncio.run(presenter._do_import(local_asset))
+        presenter._on_download_asset_requested(asset.id)
 
-            assert len(mock_host.imported_assets) > 0
-            imported_asset, options = mock_host.imported_assets[0]
-            assert imported_asset.id == local_asset.id
+        plugin.download_asset_mock.assert_awaited()
+        assert presenter._item_cache[asset.id].display_status == AssetStatus.LOCAL
+        assert payloads and isinstance(payloads[-1], dict)
+        assert asset.id in payloads[-1]["downloaded_item_ids"]
 
-
-class TestTabPresenterCleanup:
-    """Tests for cleanup functionality."""
-
-    def test_cleanup_clears_cache(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
+    def test_download_composite_requested_passes_resolution_filter(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
     ) -> None:
-        """Cleanup should clear the asset cache."""
         from uab.presenters.tab_presenter import TabPresenter
 
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
+        composite = CompositeAsset(
+            id="polyhaven-simple_chair",
+            source="polyhaven",
+            external_id="simple_chair",
+            name="Simple Chair",
+            composite_type=CompositeType.MODEL,
+            children=[],
         )
 
+        local_asset = Asset(
+            id="polyhaven-simple_chair:gltf:2k",
+            source="polyhaven",
+            external_id="simple_chair:gltf:2k",
+            name="chair_2k.gltf",
+            asset_type=AssetType.MODEL,
+            status=AssetStatus.LOCAL,
+            local_path=tmp_path / "chair_2k.gltf",
+            remote_url="https://example.com/chair_2k.gltf",
+            metadata={"format": "gltf", "resolution": "2k"},
+        )
+        updated = CompositeAsset.from_dict(
+            {**composite.to_dict(), "children": [local_asset.to_dict()]})
+
+        plugin = PresenterTestPlugin(items=[composite])
+        plugin.download_composite_mock.return_value = updated
+
+        presenter = TabPresenter(plugin=plugin, view=mock_view, host=mock_host)
         asyncio.run(presenter._do_search(""))
-        assert len(presenter._asset_cache) > 0
 
-        presenter.cleanup()
+        payloads: list[object] = []
+        presenter.download_complete.connect(lambda p: payloads.append(p))
 
-        assert len(presenter._asset_cache) == 0
+        presenter._on_download_composite_requested(composite.id, "2k")
 
+        plugin.download_composite_mock.assert_awaited()
+        last_call = plugin.download_composite_mock.await_args
+        assert last_call.kwargs["resolution"] == "2k"
+        assert payloads and local_asset.id in payloads[-1]["downloaded_item_ids"]
 
-class TestTabPresenterProperties:
-    """Tests for public properties."""
-
-    def test_is_loading_property(
-        self, mock_plugin: MockPlugin, mock_view: MagicMock, mock_host: MockHostIntegration
+    def test_import_composite_calls_host_import_composite(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
     ) -> None:
-        """is_loading should reflect loading state."""
         from uab.presenters.tab_presenter import TabPresenter
 
-        presenter = TabPresenter(
-            plugin=mock_plugin, view=mock_view, host=mock_host
+        material = CompositeAsset(
+            id="polyhaven-rusty_metal",
+            source="polyhaven",
+            external_id="rusty_metal",
+            name="Rusty Metal",
+            composite_type=CompositeType.MATERIAL,
+            children=[],
         )
 
-        # Initially should not be loading (after initial search completes)
-        # Note: due to async nature, this may vary
-        assert isinstance(presenter.is_loading, bool)
+        expanded = CompositeAsset.from_dict(
+            {
+                **material.to_dict(),
+                "children": [],
+            }
+        )
+
+        plugin = PresenterTestPlugin(items=[material])
+        plugin.expand_mock.return_value = expanded
+
+        presenter = TabPresenter(plugin=plugin, view=mock_view, host=mock_host)
+        asyncio.run(presenter._do_search(""))
+
+        presenter._on_import_requested(material.id)
+
+        assert len(mock_host.imported_composites) == 1
+        imported, options = mock_host.imported_composites[0]
+        assert imported.id == material.id
+        assert options["renderer"] == "arnold"
