@@ -26,7 +26,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from uab.core.models import StandardAsset, AssetStatus, AssetType
+from uab.core.interfaces import Browsable
+from uab.core.models import (
+    Asset,
+    AssetStatus,
+    AssetType,
+    CompositeAsset,
+    CompositeType,
+    StandardAsset,
+)
 
 if TYPE_CHECKING:
     from uab.ui.utils import LocalImageLoader
@@ -133,6 +141,7 @@ class AssetColor(Enum):
     STATUS_LOCAL = QColor("#44ff44")
     STATUS_CLOUD = QColor("#888888")
     STATUS_DOWNLOADING = QColor("#4a9eff")
+    STATUS_MIXED = QColor("#ffd966")
     TYPE_TEXTURE = QColor("#ff9944")
     TYPE_MODEL = QColor("#44ff99")
     TYPE_HDRI = QColor("#9944ff")
@@ -140,6 +149,24 @@ class AssetColor(Enum):
     @property
     def qcolor(self) -> QColor:
         return self.value
+
+
+def _get_base_asset_type(item: Browsable) -> AssetType | None:
+    """
+    Map an item (asset or composite) to a primary AssetType for UI badges.
+    """
+    if isinstance(item, CompositeAsset):
+        ctype = item.composite_type
+        if ctype in (CompositeType.TEXTURE, CompositeType.MATERIAL):
+            return AssetType.TEXTURE
+        if ctype in (CompositeType.MODEL, CompositeType.MODEL_SET):
+            return AssetType.MODEL
+        if ctype in (CompositeType.HDRI, CompositeType.HDRI_SET):
+            return AssetType.HDRI
+        return None
+
+    t = getattr(item, "type", None)
+    return t if isinstance(t, AssetType) else None
 
 
 class AssetDelegate(QStyledItemDelegate):
@@ -171,7 +198,7 @@ class AssetDelegate(QStyledItemDelegate):
         # Large preview popup
         self._preview_popup: Optional[LargePreviewPopup] = None
         self._hover_timer: Optional[QTimer] = None
-        self._preview_asset: Optional[StandardAsset] = None
+        self._preview_item: Optional[Browsable] = None
         self._preview_parent: Optional[QWidget] = None
         self._preview_item_rect: Optional[QRect] = None
 
@@ -199,11 +226,11 @@ class AssetDelegate(QStyledItemDelegate):
             item_rect: The item's rectangle in viewport coordinates
             global_pos: The global position for popup placement reference
         """
-        asset: Optional[StandardAsset] = index.data(Qt.ItemDataRole.UserRole)
-        if asset is None:
+        item: Optional[Browsable] = index.data(Qt.ItemDataRole.UserRole)
+        if item is None:
             return
 
-        self._preview_asset = asset
+        self._preview_item = item
         self._preview_item_rect = item_rect
 
         # Cancel any pending timer
@@ -227,16 +254,16 @@ class AssetDelegate(QStyledItemDelegate):
         if self._preview_popup is not None:
             self._preview_popup.schedule_hide()
 
-        self._preview_asset = None
+        self._preview_item = None
         self._preview_item_rect = None
 
     def _show_large_preview(self) -> None:
         """Show the large preview popup for the currently hovered asset."""
-        if self._preview_asset is None or self._preview_parent is None:
+        if self._preview_item is None or self._preview_parent is None:
             return
 
         # Load full resolution image for the preview
-        pixmap = self._load_full_resolution_preview(self._preview_asset)
+        pixmap = self._load_full_resolution_preview(self._preview_item)
 
         if pixmap is None or pixmap.isNull():
             return
@@ -252,28 +279,30 @@ class AssetDelegate(QStyledItemDelegate):
         self._position_preview_popup()
         self._preview_popup.show()
 
-    def _load_full_resolution_preview(self, asset: StandardAsset) -> Optional[QPixmap]:
+    def _load_full_resolution_preview(self, item: Browsable) -> Optional[QPixmap]:
         """Load full resolution image for the large preview popup."""
         pixmap = QPixmap()
 
-        if asset.thumbnail_path and asset.thumbnail_path.exists():
-            pixmap.load(str(asset.thumbnail_path))
+        thumb_path = getattr(item, "thumbnail_path", None)
+        if thumb_path and thumb_path.exists():
+            pixmap.load(str(thumb_path))
 
         # Try local_path for the actual asset file
-        if pixmap.isNull() and asset.local_path and asset.local_path.exists():
-            suffix = asset.local_path.suffix.lower()
+        local_path = getattr(item, "local_path", None)
+        if pixmap.isNull() and local_path and local_path.exists():
+            suffix = local_path.suffix.lower()
             if suffix in (".png", ".jpg", ".jpeg", ".bmp", ".gif"):
-                pixmap.load(str(asset.local_path))
+                pixmap.load(str(local_path))
             elif suffix in (".hdr", ".exr"):
                 # Use HDR/EXR loader with higher resolution for preview
                 from uab.ui.utils import load_hdri_thumbnail
-                hdr_pixmap = load_hdri_thumbnail(
-                    asset.local_path, max_size=1024)
+                hdr_pixmap = load_hdri_thumbnail(local_path, max_size=1024)
                 if hdr_pixmap and not hdr_pixmap.isNull():
                     pixmap = hdr_pixmap
 
         # Fall back to model placeholder if needed
-        if pixmap.isNull() and asset.type == AssetType.MODEL:
+        base_type = _get_base_asset_type(item)
+        if pixmap.isNull() and base_type == AssetType.MODEL:
             placeholder = self._get_model_placeholder()
             if placeholder:
                 pixmap = placeholder
@@ -341,14 +370,14 @@ class AssetDelegate(QStyledItemDelegate):
     def paint(
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex
     ) -> None:
-        """Paint an asset item."""
+        """Paint a grid item (asset or composite)."""
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        asset: StandardAsset = index.data(Qt.ItemDataRole.UserRole)
+        item: Browsable = index.data(Qt.ItemDataRole.UserRole)
 
         # Handle empty state
-        if asset is None:
+        if item is None:
             self._paint_empty_state(painter, option)
             painter.restore()
             return
@@ -374,13 +403,13 @@ class AssetDelegate(QStyledItemDelegate):
         )
 
         # Draw thumbnail
-        self._paint_thumbnail(painter, thumb_rect, asset)
+        self._paint_thumbnail(painter, thumb_rect, item)
 
         # Draw status overlay
-        self._paint_status_overlay(painter, thumb_rect, asset.status)
+        self._paint_status_overlay(painter, thumb_rect, item)
 
         # Draw type badge
-        self._paint_type_badge(painter, thumb_rect, asset.type)
+        self._paint_type_badge(painter, thumb_rect, item)
 
         # Draw asset name
         text_rect = QRect(
@@ -389,7 +418,7 @@ class AssetDelegate(QStyledItemDelegate):
             rect.width() - (thumb_margin * 2),
             text_height,
         )
-        self._paint_name(painter, text_rect, asset.name)
+        self._paint_name(painter, text_rect, item.name)
 
         painter.restore()
 
@@ -440,11 +469,12 @@ class AssetDelegate(QStyledItemDelegate):
         painter.drawPath(path)
 
     def _paint_thumbnail(
-        self, painter: QPainter, rect: QRect, asset: StandardAsset
+        self, painter: QPainter, rect: QRect, item: Browsable
     ) -> None:
         """Paint the thumbnail image."""
-        pixmap = self._get_thumbnail(asset)
-        if (pixmap is None or pixmap.isNull()) and asset.type == AssetType.MODEL:
+        pixmap = self._get_thumbnail(item)
+        base_type = _get_base_asset_type(item)
+        if (pixmap is None or pixmap.isNull()) and base_type == AssetType.MODEL:
             pixmap = self._get_model_placeholder()
 
         if pixmap and not pixmap.isNull():
@@ -505,15 +535,21 @@ class AssetDelegate(QStyledItemDelegate):
         return None
 
     def _paint_status_overlay(
-        self, painter: QPainter, rect: QRect, status: AssetStatus
+        self, painter: QPainter, rect: QRect, item: Browsable
     ) -> None:
         """Paint the status overlay icon."""
         # Position in top-left corner
         icon_size = 20
         icon_rect = QRect(rect.x() + 5, rect.y() + 5, icon_size, icon_size)
 
+        status = item.display_status
+        is_mixed = isinstance(item, CompositeAsset) and item.is_mixed
+
         # Draw background circle
-        if status == AssetStatus.LOCAL:
+        if is_mixed:
+            color = self.COLORS.STATUS_MIXED.qcolor
+            icon = "⚡"
+        elif status == AssetStatus.LOCAL:
             color = self.COLORS.STATUS_LOCAL.qcolor
             icon = "✓"
         elif status == AssetStatus.CLOUD:
@@ -537,7 +573,7 @@ class AssetDelegate(QStyledItemDelegate):
         painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, icon)
 
     def _paint_type_badge(
-        self, painter: QPainter, rect: QRect, asset_type: AssetType
+        self, painter: QPainter, rect: QRect, item: Browsable
     ) -> None:
         """Paint the type badge in the bottom-right corner."""
         # Position in bottom-right corner
@@ -551,15 +587,42 @@ class AssetDelegate(QStyledItemDelegate):
         )
 
         # Determine color and text
-        if asset_type == AssetType.TEXTURE:
-            color = self.COLORS.TYPE_TEXTURE.qcolor
-            text = "TEX"
-        elif asset_type == AssetType.MODEL:
-            color = self.COLORS.TYPE_MODEL.qcolor
-            text = "3D"
-        else:  # HDRI
-            color = self.COLORS.TYPE_HDRI.qcolor
-            text = "HDR"
+        if isinstance(item, CompositeAsset):
+            ctype = item.composite_type
+            if ctype in (CompositeType.TEXTURE, CompositeType.MATERIAL):
+                color = self.COLORS.TYPE_TEXTURE.qcolor
+            elif ctype in (CompositeType.MODEL, CompositeType.MODEL_SET):
+                color = self.COLORS.TYPE_MODEL.qcolor
+            elif ctype in (CompositeType.HDRI, CompositeType.HDRI_SET):
+                color = self.COLORS.TYPE_HDRI.qcolor
+            else:
+                color = self.COLORS.TYPE_MODEL.qcolor
+
+            if ctype == CompositeType.MATERIAL:
+                text = "MAT"
+            elif ctype == CompositeType.MODEL_SET:
+                text = "SET"
+            elif ctype == CompositeType.HDRI_SET:
+                text = "SET"
+            elif ctype == CompositeType.TEXTURE:
+                text = "TEX"
+            elif ctype == CompositeType.MODEL:
+                text = "3D"
+            elif ctype == CompositeType.HDRI:
+                text = "HDR"
+            else:
+                text = ctype.value[:3].upper()
+        else:
+            asset_type = _get_base_asset_type(item)
+            if asset_type == AssetType.TEXTURE:
+                color = self.COLORS.TYPE_TEXTURE.qcolor
+                text = "TEX"
+            elif asset_type == AssetType.MODEL:
+                color = self.COLORS.TYPE_MODEL.qcolor
+                text = "3D"
+            else:  # HDRI (or unknown)
+                color = self.COLORS.TYPE_HDRI.qcolor
+                text = "HDR"
 
         # Draw badge background
         path = QPainterPath()
@@ -589,14 +652,14 @@ class AssetDelegate(QStyledItemDelegate):
         painter.drawText(rect, Qt.AlignmentFlag.AlignHCenter |
                          Qt.AlignmentFlag.AlignTop, elided)
 
-    def _get_thumbnail(self, asset: StandardAsset) -> Optional[QPixmap]:
+    def _get_thumbnail(self, item: Browsable) -> Optional[QPixmap]:
         """
         Get thumbnail pixmap from cache or load it.
 
         For slow-loading formats (HDR/EXR), returns a placeholder immediately
         and queues background loading.
         """
-        cache_key = asset.id
+        cache_key = item.id
 
         # Check cache first
         cached = self._thumbnail_cache.get(cache_key)
@@ -605,11 +668,12 @@ class AssetDelegate(QStyledItemDelegate):
 
         # Try to load from thumbnail_path
         pixmap = QPixmap()
-        if asset.thumbnail_path and asset.thumbnail_path.exists():
-            pixmap.load(str(asset.thumbnail_path))
-        elif asset.local_path:
-            local_path = asset.local_path
-            if local_path.exists():
+        thumb_path = getattr(item, "thumbnail_path", None)
+        if thumb_path and thumb_path.exists():
+            pixmap.load(str(thumb_path))
+        else:
+            local_path = getattr(item, "local_path", None)
+            if local_path and local_path.exists():
                 suffix = local_path.suffix.lower()
                 if suffix in (".png", ".jpg", ".jpeg", ".bmp", ".gif"):
                     pixmap.load(str(local_path))
@@ -618,7 +682,8 @@ class AssetDelegate(QStyledItemDelegate):
                     if cache_key not in self._loading_assets and self._image_loader is not None:
                         self._loading_assets.add(cache_key)
                         max_size = self._cell_size - 16  # margins
-                        self._image_loader.add_item((cache_key, local_path, max_size))
+                        self._image_loader.add_item(
+                            (cache_key, local_path, max_size))
                         if not self._image_loader.isRunning():
                             self._image_loader.start()
                         return self._get_loading_placeholder()

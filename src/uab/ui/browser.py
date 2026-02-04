@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from PySide6.QtCore import (
     Qt,
@@ -31,7 +31,16 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
-from uab.core.models import AssetType, StandardAsset, AssetStatus
+from uab.core.interfaces import Browsable
+from uab.core.models import (
+    Asset,
+    AssetStatus,
+    AssetType,
+    CompositeAsset,
+    CompositeType,
+    StandardAsset,
+)
+from uab.ui.composite_tree import CompositeTreeModel, CompositeTreeView, TreeItemDelegate
 from uab.ui.delegates import AssetDelegate
 from uab.ui.utils import load_hdri_thumbnail, LocalImageLoader
 
@@ -42,22 +51,28 @@ _PLACEHOLDER_PATH = Path(
 
 class DetailView(QWidget):
     """
-    Full-screen detail view for asset inspection.
+    Full-screen detail view for item inspection.
 
-    Displays a large preview on the left and metadata on the right.
-    Emits signals for user interactions (back, import, download).
+    Displays a large preview on the left and either:
+    - A simple metadata panel for leaf assets
+    - A recursive tree view for composite assets
+
+    Emits signals for user interactions (back, import, download, expand).
     """
 
     back_clicked = Signal()
-    import_clicked = Signal(str)  # asset_id
-    download_clicked = Signal(str)  # asset_id
+    import_clicked = Signal(str)  # item_id
+    download_asset_clicked = Signal(str)  # asset_id
+    download_composite_clicked = Signal(str, object)  # composite_id, resolution(str|None)
+    tree_item_expanded = Signal(str)  # item_id
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("detailView")
-        self._current_asset: Optional[StandardAsset] = None
+        self._current_item: Browsable | None = None
         self._download_enabled = True
         self._preview_needs_load = False
+        self._tree_model = CompositeTreeModel()
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -100,72 +115,110 @@ class DetailView(QWidget):
 
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(20, 20, 20, 20)
-        right_layout.setSpacing(0)
+        right_layout.setSpacing(10)
 
-        # Scroll area for metadata
+        # Stacked detail panel (asset vs composite)
+        self._detail_stack = QStackedWidget()
+
+        # Page 0: Leaf asset details (metadata)
+        asset_page = QWidget()
+        asset_page_layout = QVBoxLayout(asset_page)
+        asset_page_layout.setContentsMargins(0, 0, 0, 0)
+        asset_page_layout.setSpacing(0)
+
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(15, 15, 15, 15)
         content_layout.setSpacing(20)
 
-        # Name field
         name_section = self._create_field_section("Name")
         self._name_label = name_section["value"]
         self._name_label.setObjectName("detailNameLabel")
         content_layout.addLayout(name_section["layout"])
-
         content_layout.addWidget(self._create_separator())
 
-        # Type field
         type_section = self._create_field_section("Type")
         self._type_label = type_section["value"]
         content_layout.addLayout(type_section["layout"])
-
         content_layout.addWidget(self._create_separator())
 
-        # Status field
         status_section = self._create_field_section("Status")
         self._status_label = status_section["value"]
         content_layout.addLayout(status_section["layout"])
-
         content_layout.addWidget(self._create_separator())
 
-        # Source field
         source_section = self._create_field_section("Source")
         self._source_label = source_section["value"]
         content_layout.addLayout(source_section["layout"])
-
         content_layout.addWidget(self._create_separator())
 
-        # Path field
         path_section = self._create_field_section("File Path")
         self._path_label = path_section["value"]
         self._path_label.setObjectName("detailPathLabel")
         self._path_container = path_section["layout"]
         content_layout.addLayout(self._path_container)
-
         content_layout.addWidget(self._create_separator())
 
-        # Metadata section (for additional info like resolutions, files)
         metadata_section = self._create_field_section("Details")
         self._metadata_label = metadata_section["value"]
         self._metadata_label.setMinimumHeight(60)
         content_layout.addLayout(metadata_section["layout"])
-
         content_layout.addStretch()
 
         scroll_area.setWidget(content_widget)
-        right_layout.addWidget(scroll_area, 1)
+        asset_page_layout.addWidget(scroll_area, 1)
 
-        # Action buttons at bottom
+        # Page 1: Composite details (tree view)
+        composite_page = QWidget()
+        composite_layout = QVBoxLayout(composite_page)
+        composite_layout.setContentsMargins(15, 15, 15, 15)
+        composite_layout.setSpacing(10)
+
+        self._composite_title = QLabel()
+        self._composite_title.setObjectName("detailNameLabel")
+        self._composite_title.setWordWrap(True)
+        composite_layout.addWidget(self._composite_title)
+
+        self._composite_status = QLabel()
+        self._composite_status.setProperty("class", "fieldValue")
+        self._composite_status.setWordWrap(True)
+        composite_layout.addWidget(self._composite_status)
+
+        self._warnings = QLabel()
+        self._warnings.setWordWrap(True)
+        self._warnings.setProperty("class", "fieldValue")
+        self._warnings.setVisible(False)
+        composite_layout.addWidget(self._warnings)
+
+        self._tree = CompositeTreeView()
+        self._tree.setObjectName("compositeTreeView")
+        self._tree.setModel(self._tree_model)
+        self._tree_delegate = TreeItemDelegate(self._tree)
+        self._tree.setItemDelegate(self._tree_delegate)
+
+        self._tree_delegate.download_clicked.connect(self.download_asset_clicked.emit)
+        self._tree.item_expanded.connect(self.tree_item_expanded.emit)
+
+        composite_layout.addWidget(self._tree, 1)
+
+        self._detail_stack.addWidget(asset_page)
+        self._detail_stack.addWidget(composite_page)
+
+        right_layout.addWidget(self._detail_stack, 1)
+
+        # Action buttons at bottom (shared)
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
+
+        self._resolution_combo = QComboBox()
+        self._resolution_combo.setObjectName("resolutionCombo")
+        self._resolution_combo.addItems(["All", "1k", "2k", "4k", "8k"])
+        self._resolution_combo.setVisible(False)
+        btn_layout.addWidget(self._resolution_combo)
 
         self._download_btn = QPushButton("Download")
         self._download_btn.setObjectName("downloadButton")
@@ -210,84 +263,105 @@ class DetailView(QWidget):
     def set_download_enabled(self, enabled: bool) -> None:
         """Enable or disable download capability."""
         self._download_enabled = enabled
+        # refresh button visibility for current item
+        if self._current_item is not None:
+            self.show_item(self._current_item)
 
-    def show_asset(self, asset: StandardAsset) -> None:
+    def show_item(self, item: Browsable) -> None:
         """
-        Display the full details for an asset.
+        Display the full details for an item (asset or composite).
 
         Args:
-            asset: The asset to display
+            item: The item to display
         """
-        self._current_asset = asset
+        self._current_item = item
         self._preview_needs_load = True
 
-        self._name_label.setText(asset.name)
-        self._type_label.setText(asset.type.value.upper())
-        self._status_label.setText(asset.status.value.upper())
-        self._source_label.setText(asset.source)
+        if isinstance(item, CompositeAsset):
+            self._detail_stack.setCurrentIndex(1)
+            self._resolution_combo.setVisible(True)
+            self._download_btn.setText("Download All")
 
-        if asset.local_path:
-            self._path_label.setText(str(asset.local_path))
-            self._path_label.setVisible(True)
+            self._composite_title.setText(item.name)
+            status_text = item.display_status.value.upper()
+            if item.is_mixed:
+                status_text = "MIXED"
+            self._composite_status.setText(f"Status: {status_text}")
+
+            warnings = self._get_composite_warnings(item)
+            self._warnings.setText("\n".join(warnings))
+            self._warnings.setVisible(bool(warnings))
+
+            self._tree_model.set_root(item)
+            self._tree.expandToDepth(0)
+
+            self._download_btn.setVisible(
+                self._download_enabled and getattr(item, "has_cloud_children", False)
+            )
+            # gray out import if nothing is local
+            self._import_btn.setEnabled(getattr(item, "has_local_children", False))
+
         else:
-            self._path_label.setText("Not downloaded")
-            self._path_label.setVisible(True)
+            self._detail_stack.setCurrentIndex(0)
+            self._resolution_combo.setVisible(False)
+            self._download_btn.setText("Download")
 
-        metadata_parts = []
-        if asset.metadata:
-            if "resolutions" in asset.metadata:
-                resolutions = asset.metadata["resolutions"]
-                if isinstance(resolutions, list):
-                    metadata_parts.append(
-                        f"Resolutions: {', '.join(resolutions)}")
-            if "files" in asset.metadata:
-                files = asset.metadata["files"]
-                if isinstance(files, dict):
-                    metadata_parts.append(f"Files: {len(files)}")
-            if "author" in asset.metadata:
-                metadata_parts.append(f"Author: {asset.metadata['author']}")
-            if "categories" in asset.metadata:
-                cats = asset.metadata["categories"]
-                if isinstance(cats, list):
-                    metadata_parts.append(f"Categories: {', '.join(cats)}")
+            item_type = getattr(item, "type", None)
+            if item_type is None and hasattr(item, "asset_type"):
+                item_type = getattr(item, "asset_type", None)
 
-        self._metadata_label.setText(
-            "\n".join(
-                metadata_parts) if metadata_parts else "No additional details"
-        )
+            status = getattr(item, "status", item.display_status)
+            self._name_label.setText(item.name)
+            self._type_label.setText(
+                item_type.value.upper() if isinstance(item_type, AssetType) else "UNKNOWN"
+            )
+            self._status_label.setText(
+                status.value.upper() if isinstance(status, AssetStatus) else "UNKNOWN"
+            )
+            self._source_label.setText(item.source)
 
-        self._download_btn.setVisible(
-            asset.status == AssetStatus.CLOUD and self._download_enabled
-        )
-        self._import_btn.setEnabled(asset.status == AssetStatus.LOCAL)
+            local_path = getattr(item, "local_path", None)
+            if local_path:
+                self._path_label.setText(str(local_path))
+            else:
+                self._path_label.setText("Not downloaded")
+
+            self._metadata_label.setText(self._format_asset_metadata(item))
+
+            self._download_btn.setVisible(
+                bool(status == AssetStatus.CLOUD and self._download_enabled)
+            )
+            self._import_btn.setEnabled(bool(status == AssetStatus.LOCAL))
 
         # Defer preview loading until widget is shown and laid out
         QTimer.singleShot(0, self._deferred_load_preview)
 
     def _deferred_load_preview(self) -> None:
         """Load preview after widget is laid out."""
-        if self._current_asset and self._preview_needs_load:
-            self._load_preview(self._current_asset)
+        if self._current_item and self._preview_needs_load:
+            self._load_preview(self._current_item)
             self._preview_needs_load = False
 
-    def _load_preview(self, asset: StandardAsset) -> None:
-        """Load the preview image for the asset."""
+    def _load_preview(self, item: Browsable) -> None:
+        """Load the preview image for the current item."""
         pixmap = QPixmap()
 
         # Try thumbnail_path first
-        if asset.thumbnail_path and asset.thumbnail_path.exists():
-            pixmap.load(str(asset.thumbnail_path))
+        thumb_path = getattr(item, "thumbnail_path", None)
+        if thumb_path and thumb_path.exists():
+            pixmap.load(str(thumb_path))
 
         # Try local_path for various formats
-        if pixmap.isNull() and asset.local_path and asset.local_path.exists():
-            suffix = asset.local_path.suffix.lower()
+        local_path = getattr(item, "local_path", None)
+        if pixmap.isNull() and local_path and local_path.exists():
+            suffix = local_path.suffix.lower()
             if suffix in (".png", ".jpg", ".jpeg", ".gif", ".bmp"):
-                pixmap.load(str(asset.local_path))
+                pixmap.load(str(local_path))
             elif suffix in (".hdr", ".exr"):
                 # Use HDR loader for high dynamic range images
                 # Use a larger max_size for the detail view
                 hdri_pixmap = load_hdri_thumbnail(
-                    asset.local_path, max_size=1024)
+                    local_path, max_size=1024)
                 if hdri_pixmap:
                     pixmap = hdri_pixmap
 
@@ -324,13 +398,13 @@ class DetailView(QWidget):
         """Handle show event to load preview when widget becomes visible."""
         super().showEvent(event)
         # Reload preview when shown (in case size changed)
-        if self._current_asset:
+        if self._current_item:
             QTimer.singleShot(50, self._deferred_load_preview)
 
     def resizeEvent(self, event) -> None:
         """Handle resize to update preview scaling."""
         super().resizeEvent(event)
-        if self._current_asset and self.isVisible():
+        if self._current_item and self.isVisible():
             # Debounce resize updates
             self._preview_needs_load = True
             QTimer.singleShot(100, self._deferred_load_preview)
@@ -341,13 +415,53 @@ class DetailView(QWidget):
 
     def _on_download_clicked(self) -> None:
         """Handle download button click."""
-        if self._current_asset:
-            self.download_clicked.emit(self._current_asset.id)
+        if not self._current_item:
+            return
+
+        if isinstance(self._current_item, CompositeAsset):
+            resolution_text = self._resolution_combo.currentText()
+            resolution: str | None = None if resolution_text == "All" else resolution_text
+            self.download_composite_clicked.emit(self._current_item.id, resolution)
+        else:
+            self.download_asset_clicked.emit(self._current_item.id)
 
     def _on_import_clicked(self) -> None:
         """Handle import button click."""
-        if self._current_asset:
-            self.import_clicked.emit(self._current_asset.id)
+        if self._current_item:
+            self.import_clicked.emit(self._current_item.id)
+
+    def _format_asset_metadata(self, item: Browsable) -> str:
+        meta = getattr(item, "metadata", None)
+        if not isinstance(meta, dict) or not meta:
+            return "No additional details"
+
+        parts: list[str] = []
+        for key in ("resolution", "map_type", "format", "role"):
+            value = meta.get(key)
+            if isinstance(value, str) and value:
+                parts.append(f"{key.replace('_', ' ').title()}: {value}")
+
+        file_size = getattr(item, "file_size", None)
+        if isinstance(file_size, int):
+            parts.append(f"File Size: {file_size} bytes")
+
+        remote_url = getattr(item, "remote_url", None)
+        if isinstance(remote_url, str) and remote_url:
+            parts.append("Remote: yes")
+
+        return "\n".join(parts) if parts else "No additional details"
+
+    def _get_composite_warnings(self, composite: CompositeAsset) -> list[str]:
+        warnings: list[str] = []
+        if not composite.children:
+            warnings.append("This composite has no loaded children yet.")
+            return warnings
+
+        if composite.has_cloud_children:
+            warnings.append("Some items are still in the cloud.")
+        if not composite.has_local_children:
+            warnings.append("Nothing is downloaded yet. Import is disabled.")
+        return warnings
 
 
 class BrowserView(QWidget):
@@ -369,10 +483,15 @@ class BrowserView(QWidget):
 
     search_requested = Signal(str)  # search query
     filter_changed = Signal(str)  # filter type
-    detail_requested = Signal(str)  # asset_id
-    import_requested = Signal(str)  # asset_id
-    download_requested = Signal(str)  # asset_id
-    remove_requested = Signal(str)  # asset_id
+    detail_requested = Signal(str)  # item_id
+    import_requested = Signal(str)  # item_id
+    # back-compat: some presenters connect to this single-signal download API
+    download_requested = Signal(str)  # item_id
+    # separate download signals for assets vs composites
+    download_asset_requested = Signal(str)  # asset_id
+    download_composite_requested = Signal(str, object)  # composite_id, resolution(str|None)
+    tree_item_expanded = Signal(str)  # item_id
+    remove_requested = Signal(str)  # item_id
     add_files_requested = Signal()  # request to add individual files
     add_folder_requested = Signal()  # request to add folder
     # asset_id - create new node (Cmd/Ctrl+Click)
@@ -392,8 +511,9 @@ class BrowserView(QWidget):
         self._scale_factor = 1.0
         self._download_enabled = True
         self._remove_enabled = True
-        self._assets: dict[str, StandardAsset] = {}  # Cache by asset ID
+        self._items: dict[str, Browsable] = {}  # Cache by item ID (grid only)
         self._current_hover_index: Optional[QModelIndex] = None
+        self._current_detail_item: Browsable | None = None
 
         # Host-specific action configuration
         self._replace_enabled = False
@@ -448,8 +568,14 @@ class BrowserView(QWidget):
         self._detail_view = DetailView()
         self._detail_view.back_clicked.connect(self.hide_detail)
         self._detail_view.import_clicked.connect(self.import_requested.emit)
-        self._detail_view.download_clicked.connect(
-            self.download_requested.emit)
+        # detail download signals
+        self._detail_view.download_asset_clicked.connect(
+            self.download_asset_requested.emit
+        )
+        self._detail_view.download_composite_clicked.connect(
+            self.download_composite_requested.emit
+        )
+        self._detail_view.tree_item_expanded.connect(self.tree_item_expanded.emit)
         self._stack.addWidget(self._detail_view)
 
         main_layout.addWidget(self._stack)
@@ -567,29 +693,29 @@ class BrowserView(QWidget):
 
     # PUBLIC API
 
-    def set_items(self, assets: list[StandardAsset]) -> None:
+    def set_items(self, items: list[Browsable]) -> None:
         """
-        Update the grid with new assets.
+        Update the grid with new items.
 
         Args:
-            assets: List of StandardAsset objects to display
+            items: List of Browsable items to display
         """
         self._model.clear()
-        self._assets.clear()
+        self._items.clear()
 
-        if not assets:
+        if not items:
             self._show_empty_state()
             return
 
-        for asset in assets:
-            item = QStandardItem()
-            item.setData(asset, Qt.ItemDataRole.UserRole)
-            item.setData(asset.name, Qt.ItemDataRole.DisplayRole)
-            item.setFlags(
+        for it in items:
+            row_item = QStandardItem()
+            row_item.setData(it, Qt.ItemDataRole.UserRole)
+            row_item.setData(it.name, Qt.ItemDataRole.DisplayRole)
+            row_item.setFlags(
                 Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
             )
-            self._model.appendRow(item)
-            self._assets[asset.id] = asset
+            self._model.appendRow(row_item)
+            self._items[it.id] = it
 
     def set_download_enabled(self, enabled: bool) -> None:
         """Enable or disable download capability."""
@@ -662,25 +788,25 @@ class BrowserView(QWidget):
         """Return the currently selected filter."""
         return self._filter_combo.currentText()
 
-    def show_detail(self, asset: StandardAsset) -> None:
+    def show_detail(self, item: Browsable) -> None:
         """
-        Display the full-screen detail view for an asset.
+        Display the full-screen detail view for an item.
 
         Args:
-            asset: The asset to display details for
+            item: The item to display details for
         """
         # Hide preview popup when switching to detail view
         self._delegate.hide_preview()
         self._current_hover_index = None
 
-        self._current_detail_asset = asset
-        self._detail_view.show_asset(asset)
+        self._current_detail_item = item
+        self._detail_view.show_item(item)
         self._stack.setCurrentIndex(1)
 
     def hide_detail(self) -> None:
         """Hide the detail view and return to grid."""
         self._stack.setCurrentIndex(0)
-        self._current_detail_asset = None
+        self._current_detail_item = None
 
     def is_detail_visible(self) -> bool:
         """Check if the detail view is currently shown."""
@@ -724,9 +850,9 @@ class BrowserView(QWidget):
 
     def _on_item_double_clicked(self, index) -> None:
         """Handle double-click on grid item."""
-        asset = index.data(Qt.ItemDataRole.UserRole)
-        if asset:
-            self.detail_requested.emit(asset.id)
+        item = index.data(Qt.ItemDataRole.UserRole)
+        if item:
+            self.detail_requested.emit(item.id)
 
     def _show_context_menu(self, pos) -> None:
         """Show context menu for the item at position."""
@@ -738,8 +864,8 @@ class BrowserView(QWidget):
         if not index.isValid():
             return
 
-        asset: StandardAsset = index.data(Qt.ItemDataRole.UserRole)
-        if not asset:
+        item: Browsable = index.data(Qt.ItemDataRole.UserRole)
+        if not item:
             return
 
         menu = QMenu(self)
@@ -749,27 +875,57 @@ class BrowserView(QWidget):
         cmd_hint = "⌘ Click" if is_mac else "Ctrl+Click"
         alt_hint = "⌥ Click" if is_mac else "Alt+Click"
 
-        # Get the node label for this asset type (e.g., "Environment Light", "Material")
-        node_label = self._get_node_label(asset.type)
+        # Composite context menu
+        if isinstance(item, CompositeAsset):
+            if self._download_enabled and getattr(item, "has_cloud_children", False):
+                download_action = menu.addAction("Download All")
+                download_action.triggered.connect(
+                    lambda: self.download_composite_requested.emit(item.id, None)
+                )
+
+            import_action = menu.addAction("Import")
+            import_action.setEnabled(getattr(item, "has_local_children", False))
+            import_action.triggered.connect(lambda: self.import_requested.emit(item.id))
+
+            menu.addSeparator()
+            details_action = menu.addAction("View Details")
+            details_action.triggered.connect(
+                lambda: self.detail_requested.emit(item.id)
+            )
+
+            menu.exec(self._grid.viewport().mapToGlobal(pos))
+            return
+
+        # Leaf asset context menu
+        status = getattr(item, "status", item.display_status)
+        asset_type = getattr(item, "type", None)
+        if asset_type is None and hasattr(item, "asset_type"):
+            asset_type = getattr(item, "asset_type", None)
+
+        node_label = (
+            self._get_node_label(asset_type)
+            if isinstance(asset_type, AssetType)
+            else "Asset"
+        )
 
         # Status-dependent actions
-        if asset.status == AssetStatus.CLOUD:
+        if status == AssetStatus.CLOUD:
             if self._download_enabled:
                 download_action = menu.addAction("Download")
                 download_action.triggered.connect(
-                    lambda: self.download_requested.emit(asset.id)
+                    lambda: self.download_asset_requested.emit(item.id)
                 )
 
             import_action = menu.addAction("Import (will download first)")
             import_action.triggered.connect(
-                lambda: self.import_requested.emit(asset.id)
+                lambda: self.import_requested.emit(item.id)
             )
 
-        elif asset.status == AssetStatus.LOCAL:
+        elif status == AssetStatus.LOCAL:
             # New <asset> action with hotkey hint
             new_action = menu.addAction(f"New {node_label}\t{cmd_hint}")
             new_action.triggered.connect(
-                lambda: self.new_asset_requested.emit(asset.id)
+                lambda: self.new_asset_requested.emit(item.id)
             )
 
             # Replace <asset> action (only if host supports it)
@@ -777,24 +933,24 @@ class BrowserView(QWidget):
                 replace_action = menu.addAction(
                     f"Replace {node_label}\t{alt_hint}")
                 replace_action.triggered.connect(
-                    lambda: self.replace_asset_requested.emit(asset.id)
+                    lambda: self.replace_asset_requested.emit(item.id)
                 )
 
             if self._remove_enabled:
                 menu.addSeparator()
                 remove_action = menu.addAction("Remove")
                 remove_action.triggered.connect(
-                    lambda: self.remove_requested.emit(asset.id)
+                    lambda: self.remove_requested.emit(item.id)
                 )
 
-        elif asset.status == AssetStatus.DOWNLOADING:
+        elif status == AssetStatus.DOWNLOADING:
             downloading_action = menu.addAction("Downloading...")
             downloading_action.setEnabled(False)
 
         menu.addSeparator()
         details_action = menu.addAction("View Details")
         details_action.triggered.connect(
-            lambda: self.detail_requested.emit(asset.id)
+            lambda: self.detail_requested.emit(item.id)
         )
 
         menu.exec(self._grid.viewport().mapToGlobal(pos))
@@ -820,12 +976,14 @@ class BrowserView(QWidget):
         if not index.isValid():
             return False
 
-        asset: StandardAsset = index.data(Qt.ItemDataRole.UserRole)
-        if not asset:
+        item: Browsable = index.data(Qt.ItemDataRole.UserRole)
+        if not item:
             return False
 
         # Only handle local assets (can't create/replace with cloud assets directly)
-        if asset.status != AssetStatus.LOCAL:
+        if not isinstance(item, (Asset, StandardAsset)):
+            return False
+        if item.status != AssetStatus.LOCAL:
             return False
 
         # Qt swaps Ctrl/Meta on macOS by default, so ControlModifier maps to:
@@ -836,13 +994,13 @@ class BrowserView(QWidget):
         # Cmd/Ctrl+Click: New asset
         if modifiers & Qt.KeyboardModifier.ControlModifier:
             self._delegate.hide_preview()
-            self.new_asset_requested.emit(asset.id)
+            self.new_asset_requested.emit(item.id)
             return True
 
         # Opt/Alt+Click: Replace asset (only if enabled)
         if modifiers & Qt.KeyboardModifier.AltModifier and self._replace_enabled:
             self._delegate.hide_preview()
-            self.replace_asset_requested.emit(asset.id)
+            self.replace_asset_requested.emit(item.id)
             return True
 
         return False
