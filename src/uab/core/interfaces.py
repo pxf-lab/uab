@@ -1,10 +1,12 @@
 """Abstract base classes and plugin registry for UAB."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from uab.core.models import AssetStatus, AssetType, StandardAsset
+from uab.core.models import Asset, AssetStatus, AssetType, CompositeAsset, StandardAsset
 
 
 @runtime_checkable
@@ -24,8 +26,7 @@ class Browsable(Protocol):
 
 
 # Type alias for composite children
-# TODO: implement these types
-Composable: TypeAlias = "Asset | CompositeAsset"
+Composable: TypeAlias = Asset | CompositeAsset
 
 
 class Plugin:
@@ -123,24 +124,35 @@ class AssetLibraryPlugin(Plugin, ABC):
         """
         ...
 
-    @abstractmethod
-    async def download(
-        self, asset: StandardAsset, resolution: str | None = None
-    ) -> StandardAsset:
+    async def expand_composite(self, composite: CompositeAsset) -> CompositeAsset:
         """
-        Download a cloud asset to local storage.
+        Expand a composite item (lazy-load/populate its children).
 
-        Args:
-            asset: The asset to download
-            resolution: Optional resolution preference (e.g., "1k", "2k", "4k")
-
-        Returns:
-            Updated StandardAsset with local_path and status=LOCAL
-
-        Raises:
-            NotImplementedError: If plugin doesn't support downloads
+        Plugins that return `CompositeAsset` items should override this.
         """
-        ...
+        raise NotImplementedError
+
+    async def download_asset(self, asset: Asset) -> Asset:
+        """
+        Download a single-file `Asset` to local storage.
+
+        Plugins that support downloads should override this.
+        """
+        raise NotImplementedError
+
+    async def download_composite(
+        self,
+        composite: CompositeAsset,
+        resolution: str | None = None,
+        recursive: bool = True,
+    ) -> CompositeAsset:
+        """
+        Download a `CompositeAsset`.
+
+        Plugins should typically download all descendant `Asset`s, optionally
+        filtered by `resolution` (plugin-specific semantics).
+        """
+        raise NotImplementedError
 
     @property
     @abstractmethod

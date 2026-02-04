@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
@@ -269,7 +269,7 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
 
     async def download_thumbnail(
         self,
-        asset: StandardAsset,
+        asset: Any,
         url: str | None = None,
     ) -> Path | None:
         """
@@ -305,7 +305,7 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                 f"Failed to download thumbnail for {asset.name}: {e}")
             return None
 
-    def get_thumbnail_cache_path(self, asset: StandardAsset) -> Path | None:
+    def get_thumbnail_cache_path(self, asset: Any) -> Path | None:
         """
         Get the cached thumbnail path for an asset if it exists.
 

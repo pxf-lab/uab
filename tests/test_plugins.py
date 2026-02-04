@@ -1,35 +1,37 @@
-"""Tests for asset library plugins."""
+"""Tests for asset library plugins.
+
+Note: These tests intentionally avoid requiring `pytest-asyncio` by driving async
+plugin methods via `asyncio.run()`.
+"""
 
 from __future__ import annotations
 
-import tempfile
+import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from uab.core.database import AssetDatabase
-from uab.core.models import AssetStatus, AssetType, StandardAsset
+from uab.core.models import Asset, AssetStatus, AssetType, CompositeAsset, CompositeType, StandardAsset
 
 
 class TestLocalLibraryPluginInit:
-    """Tests for LocalLibraryPlugin initialization.
+    """Tests for LocalLibraryPlugin initialization."""
 
-    TODO: are these really necessary?"""
-
-    def test_plugin_id_is_local(self):
+    def test_plugin_id_is_local(self) -> None:
         """Plugin ID should be 'local'."""
         from uab.plugins.local import LocalLibraryPlugin
 
         assert LocalLibraryPlugin.plugin_id == "local"
 
-    def test_display_name(self):
+    def test_display_name(self) -> None:
         """Display name should be descriptive."""
         from uab.plugins.local import LocalLibraryPlugin
 
         assert LocalLibraryPlugin.display_name == "Local Library"
 
-    def test_can_download_is_false(self, tmp_path: Path):
+    def test_can_download_is_false(self, tmp_path: Path) -> None:
         """Local plugin should not support downloads."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -38,7 +40,7 @@ class TestLocalLibraryPluginInit:
 
         assert plugin.can_download is False
 
-    def test_can_remove_is_true(self, tmp_path: Path):
+    def test_can_remove_is_true(self, tmp_path: Path) -> None:
         """Local plugin should support removal."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -51,10 +53,9 @@ class TestLocalLibraryPluginInit:
 class TestLocalLibraryPluginSearch:
     """Tests for LocalLibraryPlugin search functionality."""
 
-    @pytest.mark.asyncio
-    async def test_search_returns_all_local_assets_when_query_empty(
+    def test_search_returns_all_local_assets_when_query_empty(
         self, tmp_path: Path, make_asset
-    ):
+    ) -> None:
         """Empty query should return all local assets."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -67,15 +68,14 @@ class TestLocalLibraryPluginSearch:
         db.upsert_asset(asset1)
         db.upsert_asset(asset2)
 
-        results = await plugin.search("")
+        results = asyncio.run(plugin.search(""))
 
         assert len(results) == 2
         names = {a.name for a in results}
         assert "Test Asset 1" in names
         assert "Test Asset 2" in names
 
-    @pytest.mark.asyncio
-    async def test_search_filters_by_query(self, tmp_path: Path, make_asset):
+    def test_search_filters_by_query(self, tmp_path: Path, make_asset) -> None:
         """Search should filter by name query."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -88,13 +88,12 @@ class TestLocalLibraryPluginSearch:
         db.upsert_asset(asset1)
         db.upsert_asset(asset2)
 
-        results = await plugin.search("Brick")
+        results = asyncio.run(plugin.search("Brick"))
 
         assert len(results) == 1
         assert results[0].name == "Red Brick Wall"
 
-    @pytest.mark.asyncio
-    async def test_search_excludes_cloud_assets(self, tmp_path: Path, make_asset):
+    def test_search_excludes_cloud_assets(self, tmp_path: Path, make_asset) -> None:
         """Search should only return LOCAL status assets."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -111,7 +110,7 @@ class TestLocalLibraryPluginSearch:
         db.upsert_asset(local_asset)
         db.upsert_asset(cloud_asset)
 
-        results = await plugin.search("")
+        results = asyncio.run(plugin.search(""))
 
         assert len(results) == 1
         assert results[0].name == "Local Asset"
@@ -120,8 +119,7 @@ class TestLocalLibraryPluginSearch:
 class TestLocalLibraryPluginDownload:
     """Tests for LocalLibraryPlugin download (should raise error)."""
 
-    @pytest.mark.asyncio
-    async def test_download_raises_not_implemented(self, tmp_path: Path, make_asset):
+    def test_download_raises_not_implemented(self, tmp_path: Path, make_asset) -> None:
         """download() should raise NotImplementedError."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -130,13 +128,13 @@ class TestLocalLibraryPluginDownload:
         asset = make_asset()
 
         with pytest.raises(NotImplementedError):
-            await plugin.download(asset)
+            asyncio.run(plugin.download(asset))
 
 
 class TestLocalLibraryPluginRemove:
     """Tests for LocalLibraryPlugin remove functionality."""
 
-    def test_remove_deletes_asset_files(self, tmp_path: Path):
+    def test_remove_deletes_asset_files(self, tmp_path: Path) -> None:
         """remove_asset should delete local files."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -163,7 +161,7 @@ class TestLocalLibraryPluginRemove:
         assert not asset_file.exists()
         assert db.get_asset_by_id(asset.id) is None
 
-    def test_remove_deletes_asset_directory(self, tmp_path: Path):
+    def test_remove_deletes_asset_directory(self, tmp_path: Path) -> None:
         """remove_asset should delete asset directory."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -194,7 +192,7 @@ class TestLocalLibraryPluginRemove:
 class TestLocalLibraryPluginAddAssets:
     """Tests for LocalLibraryPlugin add_assets functionality."""
 
-    def test_implements_supports_local_import_protocol(self, tmp_path: Path):
+    def test_implements_supports_local_import_protocol(self, tmp_path: Path) -> None:
         """LocalLibraryPlugin should implement SupportsLocalImport protocol."""
         from uab.plugins.local import LocalLibraryPlugin
         from uab.core.interfaces import SupportsLocalImport
@@ -204,7 +202,7 @@ class TestLocalLibraryPluginAddAssets:
 
         assert isinstance(plugin, SupportsLocalImport)
 
-    def test_add_assets_from_directory_adds_hdri_files(self, tmp_path: Path):
+    def test_add_assets_from_directory_adds_hdri_files(self, tmp_path: Path) -> None:
         """Should add HDRI files (.hdr, .exr) with correct type."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -223,7 +221,7 @@ class TestLocalLibraryPluginAddAssets:
         assert all(a.status == AssetStatus.LOCAL for a in added)
         assert {a.name for a in added} == {"sunset", "studio"}
 
-    def test_add_assets_from_directory_adds_texture_files(self, tmp_path: Path):
+    def test_add_assets_from_directory_adds_texture_files(self, tmp_path: Path) -> None:
         """Should add texture files with correct type."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -241,7 +239,7 @@ class TestLocalLibraryPluginAddAssets:
         assert len(added) == 3
         assert all(a.type == AssetType.TEXTURE for a in added)
 
-    def test_add_assets_from_directory_adds_model_files(self, tmp_path: Path):
+    def test_add_assets_from_directory_adds_model_files(self, tmp_path: Path) -> None:
         """Should add model files with correct type."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -259,7 +257,7 @@ class TestLocalLibraryPluginAddAssets:
         assert len(added) == 3
         assert all(a.type == AssetType.MODEL for a in added)
 
-    def test_add_assets_from_directory_recursive(self, tmp_path: Path):
+    def test_add_assets_from_directory_recursive(self, tmp_path: Path) -> None:
         """Should recursively scan subdirectories."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -281,7 +279,7 @@ class TestLocalLibraryPluginAddAssets:
         assert "sunset" in names
         assert "brick" in names
 
-    def test_add_assets_from_directory_skips_unsupported(self, tmp_path: Path):
+    def test_add_assets_from_directory_skips_unsupported(self, tmp_path: Path) -> None:
         """Should skip files with unsupported extensions."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -300,7 +298,7 @@ class TestLocalLibraryPluginAddAssets:
         assert len(added) == 1
         assert added[0].name == "valid"
 
-    def test_add_assets_from_directory_skips_existing(self, tmp_path: Path):
+    def test_add_assets_from_directory_skips_existing(self, tmp_path: Path) -> None:
         """Should skip files already in database."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -326,7 +324,7 @@ class TestLocalLibraryPluginAddAssets:
 
         assert len(added) == 0
 
-    def test_add_assets_nonexistent_returns_empty(self, tmp_path: Path):
+    def test_add_assets_nonexistent_returns_empty(self, tmp_path: Path) -> None:
         """Should return empty list for nonexistent path."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -339,7 +337,7 @@ class TestLocalLibraryPluginAddAssets:
 
         assert added == []
 
-    def test_add_assets_persists_to_database(self, tmp_path: Path):
+    def test_add_assets_persists_to_database(self, tmp_path: Path) -> None:
         """Added assets should be persisted to database."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -363,7 +361,7 @@ class TestLocalLibraryPluginAddAssets:
         assert db_asset.type == AssetType.HDRI
         assert db_asset.status == AssetStatus.LOCAL
 
-    def test_add_assets_single_file(self, tmp_path: Path):
+    def test_add_assets_single_file(self, tmp_path: Path) -> None:
         """Should add a single file when passed directly."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -380,7 +378,7 @@ class TestLocalLibraryPluginAddAssets:
         assert added[0].type == AssetType.HDRI
         assert added[0].local_path == file_path
 
-    def test_add_assets_list_of_files(self, tmp_path: Path):
+    def test_add_assets_list_of_files(self, tmp_path: Path) -> None:
         """Should add multiple individual files from a list."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -402,7 +400,7 @@ class TestLocalLibraryPluginAddAssets:
         assert AssetType.TEXTURE in types
         assert AssetType.MODEL in types
 
-    def test_add_assets_mixed_files_and_directories(self, tmp_path: Path):
+    def test_add_assets_mixed_files_and_directories(self, tmp_path: Path) -> None:
         """Should handle a mix of files and directories."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -423,7 +421,7 @@ class TestLocalLibraryPluginAddAssets:
         assert "in_dir" in names
         assert "individual" in names
 
-    def test_add_assets_skips_unsupported_file(self, tmp_path: Path):
+    def test_add_assets_skips_unsupported_file(self, tmp_path: Path) -> None:
         """Should skip individual files with unsupported extensions."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -440,7 +438,7 @@ class TestLocalLibraryPluginAddAssets:
         assert len(added) == 1
         assert added[0].name == "valid"
 
-    def test_add_assets_empty_list_returns_empty(self, tmp_path: Path):
+    def test_add_assets_empty_list_returns_empty(self, tmp_path: Path) -> None:
         """Should return empty list for empty input."""
         from uab.plugins.local import LocalLibraryPlugin
 
@@ -455,19 +453,19 @@ class TestLocalLibraryPluginAddAssets:
 class TestPolyHavenPluginInit:
     """Tests for PolyHavenPlugin initialization."""
 
-    def test_plugin_id_is_polyhaven(self):
+    def test_plugin_id_is_polyhaven(self) -> None:
         """Plugin ID should be 'polyhaven'."""
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         assert PolyHavenPlugin.plugin_id == "polyhaven"
 
-    def test_display_name(self):
+    def test_display_name(self) -> None:
         """Display name should be descriptive."""
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         assert PolyHavenPlugin.display_name == "PolyHaven"
 
-    def test_can_download_is_true(self, tmp_path: Path):
+    def test_can_download_is_true(self, tmp_path: Path) -> None:
         """PolyHaven plugin should support downloads."""
         from uab.plugins.polyhaven import PolyHavenPlugin
 
@@ -476,7 +474,7 @@ class TestPolyHavenPluginInit:
 
         assert plugin.can_download is True
 
-    def test_can_remove_is_false(self, tmp_path: Path):
+    def test_can_remove_is_false(self, tmp_path: Path) -> None:
         """PolyHaven plugin should not directly support removal."""
         from uab.plugins.polyhaven import PolyHavenPlugin
 
@@ -489,15 +487,14 @@ class TestPolyHavenPluginInit:
 class TestPolyHavenPluginSettingsSchema:
     """Tests for PolyHavenPlugin settings schema."""
 
-    def test_settings_schema_includes_resolution(self, tmp_path: Path, make_asset):
+    def test_settings_schema_includes_resolution(self, tmp_path: Path) -> None:
         """Settings schema should include resolution options."""
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
-        asset = make_asset(type=AssetType.HDRI)
 
-        schema = plugin.get_settings_schema(asset)
+        schema = plugin.get_settings_schema(object())
 
         assert schema is not None
         assert "resolution" in schema
@@ -506,163 +503,392 @@ class TestPolyHavenPluginSettingsSchema:
         assert "4k" in schema["resolution"]["options"]
 
 
-class TestPolyHavenPluginSearch:
-    """Tests for PolyHavenPlugin search functionality."""
+def _make_material(external_id: str, name: str, thumbnail_url: str | None = None) -> CompositeAsset:
+    return CompositeAsset(
+        id=f"polyhaven-{external_id}",
+        source="polyhaven",
+        external_id=external_id,
+        name=name,
+        composite_type=CompositeType.MATERIAL,
+        thumbnail_url=thumbnail_url,
+        thumbnail_path=None,
+        metadata={"categories": ["test"]},
+        children=[],
+    )
 
-    @pytest.mark.asyncio
-    async def test_search_calls_api(self, tmp_path: Path):
-        """Search should call the PolyHaven API."""
+
+class TestPolyHavenPluginCompositeTree:
+    """Milestone 4: PolyHaven returns nested composite tree."""
+
+    def test_search_returns_hdris_materials_and_models(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        hdris_response = {"sunset_hdri": {"name": "Sunset HDRI"}}
+        textures_response = {"rusty_metal": {"name": "Rusty Metal"}}
+        models_response = {"simple_chair": {"name": "Simple Chair"}}
+
+        async def _fake_fetch(url: str, *args, **kwargs):  # noqa: ARG001
+            if "t=hdris" in url:
+                return hdris_response
+            if "t=textures" in url:
+                return textures_response
+            if "t=models" in url:
+                return models_response
+            return {}
+
+        with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = _fake_fetch
+            results = asyncio.run(plugin.search(""))
+
+        assert len(results) == 3
+        by_type = {(r.composite_type, r.external_id)
+                   for r in results if isinstance(r, CompositeAsset)}
+        assert (CompositeType.HDRI, "sunset_hdri") in by_type
+        assert (CompositeType.MATERIAL, "rusty_metal") in by_type
+        assert (CompositeType.MODEL, "simple_chair") in by_type
+
+    def test_search_returns_material_composites(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
 
         mock_response = {
-            "test_hdri": {
-                "name": "Test HDRI",
-                "categories": ["outdoor"],
-                "tags": ["sky"],
+            "rusty_metal": {
+                "name": "Rusty Metal",
+                "categories": ["metal"],
+                "thumbnail_url": "https://example.com/rusty.png",
             }
         }
 
         with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = mock_response
+            async def _fake_fetch(url: str, *args, **kwargs):  # noqa: ARG001
+                return mock_response if "t=textures" in url else {}
 
-            results = await plugin.search("")
+            mock_fetch.side_effect = _fake_fetch
 
-            assert mock_fetch.called
+            results = asyncio.run(plugin.search(""))
 
-    @pytest.mark.asyncio
-    async def test_search_filters_by_query(self, tmp_path: Path):
-        """Search should filter results by query string."""
+        assert len(results) == 1
+        item = results[0]
+        assert isinstance(item, CompositeAsset)
+        assert item.composite_type == CompositeType.MATERIAL
+        assert item.external_id == "rusty_metal"
+        assert item.thumbnail_url == "https://example.com/rusty.png"
+        assert item.metadata.get("categories") == ["metal"]
+        assert item.children == []
+
+    def test_expand_composite_creates_texture_children(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
 
-        mock_response = {
-            "sunset_beach": {"name": "Sunset Beach"},
-            "forest_clearing": {"name": "Forest Clearing"},
-            "studio_light": {"name": "Studio Light"},
+        material = _make_material("rusty_metal", "Rusty Metal")
+        manifest = {
+            "diffuse": {
+                "1k": {"png": {"url": "https://example.com/rusty_diff_1k.png", "size": 10}},
+                "2k": {"png": {"url": "https://example.com/rusty_diff_2k.png", "size": 20}},
+            },
+            "normal": {
+                "1k": {"png": {"url": "https://example.com/rusty_nor_1k.png"}},
+                "2k": {"png": {"url": "https://example.com/rusty_nor_2k.png"}},
+            },
         }
 
         with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = mock_response
+            mock_fetch.return_value = manifest
+            expanded = asyncio.run(plugin.expand_composite(material))
 
-            results = await plugin.search("sunset")
+        assert isinstance(expanded, CompositeAsset)
+        assert expanded.composite_type == CompositeType.MATERIAL
+        assert len(expanded.children) == 2
+        assert all(isinstance(c, CompositeAsset) for c in expanded.children)
+        assert {c.metadata.get("map_type") for c in expanded.children} == {
+            "diffuse", "normal"}
+        assert all(c.composite_type ==
+                   CompositeType.TEXTURE for c in expanded.children)
 
-            matching = [r for r in results if "sunset" in r.name.lower()]
-            assert len(matching) >= 1
+        # persisted in DB
+        db_children = db.get_composite_children(expanded.id)
+        assert len(db_children) == 2
 
-    @pytest.mark.asyncio
-    async def test_search_marks_downloaded_assets_as_local(self, tmp_path: Path):
-        """Already downloaded assets should have LOCAL status."""
+    def test_expand_texture_creates_asset_children(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
 
-        existing_asset = StandardAsset(
+        texture = CompositeAsset(
+            id="polyhaven-rusty_metal:diffuse",
             source="polyhaven",
-            external_id="existing_hdri",
-            name="Existing HDRI",
-            type=AssetType.HDRI,
-            status=AssetStatus.LOCAL,
-            local_path=tmp_path / "library" / "existing_hdri",
+            external_id="rusty_metal:diffuse",
+            name="diffuse",
+            composite_type=CompositeType.TEXTURE,
+            metadata={"role": "diffuse", "map_type": "diffuse"},
+            children=[],
         )
-        db.upsert_asset(existing_asset)
 
-        mock_response = {
-            "existing_hdri": {"name": "Existing HDRI"},
-            "new_hdri": {"name": "New HDRI"},
+        manifest = {
+            "diffuse": {
+                "1k": {"png": {"url": "https://example.com/rusty_diff_1k.png", "size": 10}},
+                "2k": {"png": {"url": "https://example.com/rusty_diff_2k.png", "size": 20}},
+            },
         }
 
         with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = mock_response
+            mock_fetch.return_value = manifest
+            expanded = asyncio.run(plugin.expand_composite(texture))
 
-            results = await plugin.search("")
+        assert expanded.composite_type == CompositeType.TEXTURE
+        assert len(expanded.children) == 2
+        assert all(isinstance(a, Asset) for a in expanded.children)
 
-            existing = next(
-                (r for r in results if r.external_id == "existing_hdri"), None
-            )
-            new = next(
-                (r for r in results if r.external_id == "new_hdri"), None)
+        # Verify URLs + metadata
+        by_res = {a.metadata["resolution"]: a for a in expanded.children}
+        assert by_res["1k"].remote_url == "https://example.com/rusty_diff_1k.png"
+        assert by_res["1k"].metadata == {
+            "resolution": "1k", "map_type": "diffuse"}
+        assert by_res["2k"].file_size == 20
 
-            if existing:
-                assert existing.status == AssetStatus.LOCAL
-            if new:
-                assert new.status == AssetStatus.CLOUD
+        # Persisted in DB
+        db_children = db.get_composite_children(expanded.id)
+        assert len(db_children) == 2
 
-
-class TestPolyHavenPluginDownload:
-    """Tests for PolyHavenPlugin download functionality."""
-
-    @pytest.mark.asyncio
-    async def test_download_rejects_non_polyhaven_assets(self, tmp_path: Path):
-        """download() should reject assets from other sources."""
+    def test_expand_hdri_creates_asset_children(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
 
-        asset = StandardAsset(
-            source="other_source",
-            external_id="test",
-            name="Test",
-            type=AssetType.HDRI,
-            status=AssetStatus.CLOUD,
-        )
-
-        with pytest.raises(ValueError, match="not from PolyHaven"):
-            await plugin.download(asset)
-
-    @pytest.mark.asyncio
-    async def test_download_creates_asset_directory(self, tmp_path: Path):
-        """download() should create the asset directory."""
-        from uab.plugins.polyhaven import PolyHavenPlugin
-
-        db = AssetDatabase(db_path=tmp_path / "test.db")
-        library_root = tmp_path / "library"
-        plugin = PolyHavenPlugin(db=db, library_root=library_root)
-
-        asset = StandardAsset(
+        hdri = CompositeAsset(
+            id="polyhaven-sunset_hdri",
             source="polyhaven",
-            external_id="test_hdri",
-            name="Test HDRI",
-            type=AssetType.HDRI,
-            status=AssetStatus.CLOUD,
+            external_id="sunset_hdri",
+            name="Sunset HDRI",
+            composite_type=CompositeType.HDRI,
+            metadata={"categories": ["outdoor"]},
+            children=[],
         )
 
-        files_response = {
+        manifest = {
             "hdri": {
-                "2k": {
-                    "hdr": {"url": "https://example.com/test_hdri_2k.hdr"}
-                }
+                "1k": {"hdr": {"url": "https://example.com/sunset_1k.hdr", "size": 10}},
+                "2k": {"exr": {"url": "https://example.com/sunset_2k.exr", "size": 20}},
             }
         }
 
-        with patch.object(
-            plugin, "_fetch_json", new_callable=AsyncMock
-        ) as mock_fetch, patch.object(
-            plugin, "_download_file", new_callable=AsyncMock
-        ) as mock_download, patch.object(
-            plugin, "download_thumbnail", new_callable=AsyncMock
-        ) as mock_thumb:
-            mock_fetch.return_value = files_response
-            mock_download.return_value = library_root / \
-                "polyhaven" / "test_hdri" / "test_hdri_2k.hdr"
-            mock_thumb.return_value = None
+        with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = manifest
+            expanded = asyncio.run(plugin.expand_composite(hdri))
 
-            result = await plugin.download(asset, resolution="2k")
+        assert expanded.composite_type == CompositeType.HDRI
+        assert len(expanded.children) == 2
+        assert all(isinstance(a, Asset) for a in expanded.children)
+        by_res = {a.metadata["resolution"]: a for a in expanded.children}
+        assert by_res["1k"].remote_url == "https://example.com/sunset_1k.hdr"
+        assert by_res["1k"].metadata["format"] == "hdr"
+        assert by_res["2k"].remote_url == "https://example.com/sunset_2k.exr"
+        assert by_res["2k"].file_size == 20
 
-            assert result.status == AssetStatus.LOCAL
-            assert result.local_path is not None
+        db_children = db.get_composite_children(expanded.id)
+        assert len(db_children) == 2
+
+    def test_expand_model_creates_asset_children(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        model = CompositeAsset(
+            id="polyhaven-simple_chair",
+            source="polyhaven",
+            external_id="simple_chair",
+            name="Simple Chair",
+            composite_type=CompositeType.MODEL,
+            metadata={"categories": ["furniture"]},
+            children=[],
+        )
+
+        manifest = {
+            "gltf": {
+                "1k": {"gltf": {"url": "https://example.com/chair_1k.gltf", "size": 100}},
+                "2k": {"gltf": {"url": "https://example.com/chair_2k.gltf"}},
+            },
+            "fbx": {
+                "1k": {"fbx": {"url": "https://example.com/chair_1k.fbx", "size": 200}},
+            },
+        }
+
+        with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = manifest
+            expanded = asyncio.run(plugin.expand_composite(model))
+
+        assert expanded.composite_type == CompositeType.MODEL
+        assert len(expanded.children) == 3
+        assert all(isinstance(a, Asset) for a in expanded.children)
+        assert all(a.asset_type == AssetType.MODEL for a in expanded.children)
+        assert {a.metadata.get("format")
+                for a in expanded.children} == {"gltf", "fbx"}
+        assert any(
+            a.remote_url == "https://example.com/chair_1k.fbx" for a in expanded.children)
+
+        db_children = db.get_composite_children(expanded.id)
+        assert len(db_children) == 3
+
+    def test_download_asset_downloads_single_file(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        asset = Asset(
+            id="polyhaven-rusty_metal:diffuse:2k",
+            source="polyhaven",
+            external_id="rusty_metal:diffuse:2k",
+            name="rusty_diff_2k.png",
+            asset_type=AssetType.TEXTURE,
+            status=AssetStatus.CLOUD,
+            remote_url="https://example.com/rusty_diff_2k.png",
+            metadata={"resolution": "2k", "map_type": "diffuse"},
+        )
+
+        async def _fake_download(url: str, dest_path: Path, *args, **kwargs) -> Path:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(b"test")
+            return dest_path
+
+        with patch.object(plugin, "_download_file", new_callable=AsyncMock) as mock_dl:
+            mock_dl.side_effect = _fake_download
+            updated = asyncio.run(plugin.download_asset(asset))
+
+        assert updated.status == AssetStatus.LOCAL
+        assert updated.local_path is not None
+        assert updated.local_path.exists()
+
+        db_asset = db.get_asset_by_external_id("polyhaven", asset.external_id)
+        assert db_asset is not None
+        assert db_asset.status == AssetStatus.LOCAL
+
+    def test_download_composite_with_resolution_filter(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        # Build a fully-expanded tree: material -> texture -> assets
+        material = _make_material("rusty_metal", "Rusty Metal")
+        texture = CompositeAsset(
+            id="polyhaven-rusty_metal:diffuse",
+            source="polyhaven",
+            external_id="rusty_metal:diffuse",
+            name="diffuse",
+            composite_type=CompositeType.TEXTURE,
+            metadata={"role": "diffuse", "map_type": "diffuse"},
+            children=[
+                Asset(
+                    id="polyhaven-rusty_metal:diffuse:1k",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse:1k",
+                    name="rusty_diff_1k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.CLOUD,
+                    remote_url="https://example.com/rusty_diff_1k.png",
+                    metadata={"resolution": "1k", "map_type": "diffuse"},
+                ),
+                Asset(
+                    id="polyhaven-rusty_metal:diffuse:2k",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse:2k",
+                    name="rusty_diff_2k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.CLOUD,
+                    remote_url="https://example.com/rusty_diff_2k.png",
+                    metadata={"resolution": "2k", "map_type": "diffuse"},
+                ),
+            ],
+        )
+        material.children = [texture]
+
+        async def _fake_download(url: str, dest_path: Path, *args, **kwargs) -> Path:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(b"test")
+            return dest_path
+
+        with patch.object(plugin, "_download_file", new_callable=AsyncMock) as mock_dl:
+            mock_dl.side_effect = _fake_download
+            updated = asyncio.run(
+                plugin.download_composite(material, resolution="2k"))
+
+        # only 2k should be local
+        updated_texture = updated.children[0]
+        assert isinstance(updated_texture, CompositeAsset)
+        by_res = {a.metadata["resolution"]
+            : a for a in updated_texture.children if isinstance(a, Asset)}
+        assert by_res["1k"].status == AssetStatus.CLOUD
+        assert by_res["2k"].status == AssetStatus.LOCAL
+
+    def test_download_composite_without_filter_downloads_all(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        material = _make_material("rusty_metal", "Rusty Metal")
+        texture = CompositeAsset(
+            id="polyhaven-rusty_metal:diffuse",
+            source="polyhaven",
+            external_id="rusty_metal:diffuse",
+            name="diffuse",
+            composite_type=CompositeType.TEXTURE,
+            metadata={"role": "diffuse", "map_type": "diffuse"},
+            children=[
+                Asset(
+                    id="polyhaven-rusty_metal:diffuse:1k",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse:1k",
+                    name="rusty_diff_1k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.CLOUD,
+                    remote_url="https://example.com/rusty_diff_1k.png",
+                    metadata={"resolution": "1k", "map_type": "diffuse"},
+                ),
+                Asset(
+                    id="polyhaven-rusty_metal:diffuse:2k",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse:2k",
+                    name="rusty_diff_2k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.CLOUD,
+                    remote_url="https://example.com/rusty_diff_2k.png",
+                    metadata={"resolution": "2k", "map_type": "diffuse"},
+                ),
+            ],
+        )
+        material.children = [texture]
+
+        async def _fake_download(url: str, dest_path: Path, *args, **kwargs) -> Path:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(b"test")
+            return dest_path
+
+        with patch.object(plugin, "_download_file", new_callable=AsyncMock) as mock_dl:
+            mock_dl.side_effect = _fake_download
+            updated = asyncio.run(plugin.download_composite(material))
+
+        updated_texture = updated.children[0]
+        assert isinstance(updated_texture, CompositeAsset)
+        assert all(isinstance(a, Asset) and a.status ==
+                   AssetStatus.LOCAL for a in updated_texture.children)
 
 
 class TestBaseAssetPluginInit:
-    """Tests for BaseAssetPlugin initialization."""
+    """Tests for SharedAssetLibraryUtils initialization."""
 
-    def test_library_root_is_created(self, tmp_path: Path):
+    def test_library_root_is_created(self, tmp_path: Path) -> None:
         """Plugin should create library root directory."""
         from uab.plugins.base import SharedAssetLibraryUtils
 
@@ -670,11 +896,8 @@ class TestBaseAssetPluginInit:
             plugin_id = "test"
             display_name = "Test"
 
-            async def search(self, query):
+            async def search(self, query: str):
                 return []
-
-            async def download(self, asset, resolution=None):
-                return asset
 
             @property
             def can_download(self):
@@ -691,7 +914,7 @@ class TestBaseAssetPluginInit:
         assert lib_root.exists()
         assert plugin.library_root == lib_root / "test"
 
-    def test_thumbnail_cache_is_accessible(self, tmp_path: Path):
+    def test_thumbnail_cache_is_accessible(self, tmp_path: Path) -> None:
         """Plugin should have thumbnail cache path."""
         from uab.plugins.base import SharedAssetLibraryUtils
 
@@ -699,11 +922,8 @@ class TestBaseAssetPluginInit:
             plugin_id = "test"
             display_name = "Test"
 
-            async def search(self, query):
+            async def search(self, query: str):
                 return []
-
-            async def download(self, asset, resolution=None):
-                return asset
 
             @property
             def can_download(self):
@@ -720,7 +940,7 @@ class TestBaseAssetPluginInit:
 
     def test_get_thumbnail_cache_path_returns_none_if_not_cached(
         self, tmp_path: Path, make_asset
-    ):
+    ) -> None:
         """get_thumbnail_cache_path should return None if not cached."""
         from uab.plugins.base import SharedAssetLibraryUtils
 
@@ -728,11 +948,8 @@ class TestBaseAssetPluginInit:
             plugin_id = "test"
             display_name = "Test"
 
-            async def search(self, query):
+            async def search(self, query: str):
                 return []
-
-            async def download(self, asset, resolution=None):
-                return asset
 
             @property
             def can_download(self):
@@ -753,7 +970,7 @@ class TestBaseAssetPluginInit:
 class TestPluginRegistration:
     """Tests for plugin auto-registration."""
 
-    def test_all_plugins_are_registered(self):
+    def test_all_plugins_are_registered(self) -> None:
         """All plugins should be registered in the registry."""
         from uab import plugins  # noqa: F401
         from uab.plugins import MockPlugin, LocalLibraryPlugin, PolyHavenPlugin
@@ -762,7 +979,7 @@ class TestPluginRegistration:
         assert LocalLibraryPlugin.plugin_id == "local"
         assert PolyHavenPlugin.plugin_id == "polyhaven"
 
-    def test_can_instantiate_registered_plugins(self, tmp_path: Path):
+    def test_can_instantiate_registered_plugins(self, tmp_path: Path) -> None:
         """Should be able to instantiate plugins from registry."""
         from uab.plugins import MockPlugin, LocalLibraryPlugin, PolyHavenPlugin
 
