@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias, Union
 from uuid import uuid4
 import warnings
 
@@ -28,6 +28,26 @@ class AssetType(str, Enum):
     TEXTURE = "texture"  # Texture maps (diffuse, normal, etc.)
     MODEL = "model"  # 3D geometry files
     HDRI = "hdri"  # HDR environment images
+
+
+class CompositeType(str, Enum):
+    """Type of composite asset grouping.
+
+    Composite types describe *groupings* of one or more leaf `Asset`s, potentially
+    nested recursively via other `CompositeAsset`s.
+    """
+
+    # Leaf-level composites (contain only Assets)
+    TEXTURE = "texture"
+    MODEL = "model"
+    HDRI = "hdri"
+
+    # Nested composites (contain other composites and/or assets)
+    MATERIAL = "material"
+    MODEL_SET = "model_set"
+    HDRI_SET = "hdri_set"
+    CHARACTER = "character"
+    SCENE = "scene"
 
 
 @dataclass
@@ -104,6 +124,141 @@ class Asset:
             thumbnail_path=Path(thumbnail_path) if thumbnail_path else None,
             file_size=data.get("file_size"),
             metadata=data.get("metadata", {}),
+        )
+
+
+Composable: TypeAlias = Union[Asset, "CompositeAsset"]
+
+
+@dataclass
+class CompositeAsset:
+    """A named collection of Assets and/or other CompositeAssets."""
+
+    id: str
+    source: str
+    external_id: str
+    name: str
+    composite_type: CompositeType
+    thumbnail_url: str | None = None
+    thumbnail_path: Path | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    children: list[Composable] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.thumbnail_path, str):
+            self.thumbnail_path = Path(self.thumbnail_path)
+        if isinstance(self.composite_type, str):
+            self.composite_type = CompositeType(self.composite_type)
+        if not self.id:
+            self.id = f"{self.source}-{self.name}-{str(uuid4())}"
+
+    def _collect_leaf_statuses(self) -> set[AssetStatus]:
+        """Recursively collect statuses of all leaf Assets."""
+        statuses: set[AssetStatus] = set()
+        for child in self.children:
+            if isinstance(child, Asset):
+                statuses.add(child.status)
+            elif isinstance(child, CompositeAsset):
+                statuses.update(child._collect_leaf_statuses())
+        return statuses
+
+    @property
+    def display_status(self) -> AssetStatus:
+        """Status to show in UI (derived from descendant Assets)."""
+        if not self.children:
+            return AssetStatus.CLOUD
+
+        statuses = self._collect_leaf_statuses()
+        if not statuses:
+            return AssetStatus.CLOUD
+        if AssetStatus.DOWNLOADING in statuses:
+            return AssetStatus.DOWNLOADING
+        if statuses == {AssetStatus.LOCAL}:
+            return AssetStatus.LOCAL
+        if statuses == {AssetStatus.CLOUD}:
+            return AssetStatus.CLOUD
+
+        # TODO: this needs to be mixed but keeping this default for UI compatibility for now
+        return AssetStatus.CLOUD
+
+    @property
+    def has_local_children(self) -> bool:
+        """True if any descendant Asset is LOCAL."""
+        return AssetStatus.LOCAL in self._collect_leaf_statuses()
+
+    @property
+    def has_cloud_children(self) -> bool:
+        """True if any descendant Asset is CLOUD."""
+        return AssetStatus.CLOUD in self._collect_leaf_statuses()
+
+    @property
+    def is_mixed(self) -> bool:
+        """True if composite has both local and cloud descendants."""
+        statuses = self._collect_leaf_statuses()
+        return AssetStatus.LOCAL in statuses and AssetStatus.CLOUD in statuses
+
+    def get_all_assets(self) -> list[Asset]:
+        """Recursively collect all leaf Assets."""
+        assets: list[Asset] = []
+        for child in self.children:
+            if isinstance(child, Asset):
+                assets.append(child)
+            elif isinstance(child, CompositeAsset):
+                assets.extend(child.get_all_assets())
+        return assets
+
+    def get_local_assets(self) -> list[Asset]:
+        """Get all local leaf Assets."""
+        return [a for a in self.get_all_assets() if a.status == AssetStatus.LOCAL]
+
+    def get_child_by_role(self, role: str) -> Composable | None:
+        """Find a direct child by its role metadata."""
+        for child in self.children:
+            meta = getattr(child, "metadata", None)
+            if isinstance(meta, dict) and meta.get("role") == role:
+                return child
+        return None
+
+    def get_children_by_type(self, child_type: type) -> list[Composable]:
+        """Return direct children that match the given type."""
+        return [child for child in self.children if isinstance(child, child_type)]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary (children serialized recursively)."""
+        return {
+            "id": self.id,
+            "source": self.source,
+            "external_id": self.external_id,
+            "name": self.name,
+            "composite_type": self.composite_type.value,
+            "thumbnail_url": self.thumbnail_url,
+            "thumbnail_path": str(self.thumbnail_path) if self.thumbnail_path else None,
+            "metadata": self.metadata,
+            "children": [child.to_dict() for child in self.children],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CompositeAsset":
+        """Deserialize from dictionary (children deserialized recursively)."""
+        children: list[Composable] = []
+        for child_data in data.get("children", []):
+            if "composite_type" in child_data:
+                children.append(CompositeAsset.from_dict(child_data))
+            else:
+                children.append(Asset.from_dict(child_data))
+
+        thumbnail_path = data.get("thumbnail_path")
+        return cls(
+            id=data.get("id", ""),
+            source=data.get("source", ""),
+            external_id=data.get("external_id", ""),
+            name=data.get("name", ""),
+            composite_type=CompositeType(
+                data.get("composite_type", CompositeType.SCENE.value)),
+            thumbnail_url=data.get("thumbnail_url"),
+            thumbnail_path=Path(thumbnail_path) if thumbnail_path else None,
+            metadata=data.get("metadata", {}),
+            children=children,
         )
 
 
