@@ -221,8 +221,34 @@ class TestLocalLibraryPluginAddAssets:
         assert all(a.status == AssetStatus.LOCAL for a in added)
         assert {a.name for a in added} == {"sunset", "studio"}
 
-    def test_add_assets_from_directory_adds_texture_files(self, tmp_path: Path) -> None:
-        """Should add texture files with correct type."""
+    def test_add_assets_groups_hdri_variants_into_hdri_composite(self, tmp_path: Path) -> None:
+        """Multiple HDRI variants of the same basename should group into an HDRI composite."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(db=db)
+
+        assets_dir = tmp_path / "hdris"
+        assets_dir.mkdir()
+        (assets_dir / "sunset_2k.hdr").write_bytes(b"fake hdr")
+        (assets_dir / "sunset_4k.exr").write_bytes(b"fake exr")
+
+        added = plugin.add_assets(assets_dir)
+
+        assert len(added) == 1
+        assert isinstance(added[0], CompositeAsset)
+
+        hdri = added[0]
+        assert hdri.composite_type == CompositeType.HDRI
+        assert hdri.name == "sunset"
+        assert len(hdri.children) == 2
+        assert all(isinstance(c, Asset) for c in hdri.children)
+        assert all(c.asset_type == AssetType.HDRI for c in hdri.children)  # type: ignore[attr-defined]
+        assert {c.metadata.get("resolution") for c in hdri.children} == {"2k", "4k"}
+        assert {c.metadata.get("format") for c in hdri.children} == {"hdr", "exr"}
+
+    def test_add_assets_from_directory_groups_texture_files(self, tmp_path: Path) -> None:
+        """Should group texture map files into a MATERIAL→TEXTURE→Asset tree."""
         from uab.plugins.local import LocalLibraryPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
@@ -236,8 +262,147 @@ class TestLocalLibraryPluginAddAssets:
 
         added = plugin.add_assets(assets_dir)
 
-        assert len(added) == 3
-        assert all(a.type == AssetType.TEXTURE for a in added)
+        assert len(added) == 1
+        assert isinstance(added[0], CompositeAsset)
+
+        material = added[0]
+        assert material.composite_type == CompositeType.MATERIAL
+        assert material.name == "brick"
+
+        assert len(material.children) == 3
+        assert all(isinstance(c, CompositeAsset) for c in material.children)
+        assert all(c.composite_type == CompositeType.TEXTURE for c in material.children)
+
+        for tex in material.children:
+            assert tex.metadata.get("role") == tex.name
+            assert tex.metadata.get("map_type") == tex.name
+            assert len(tex.children) == 1
+            assert isinstance(tex.children[0], Asset)
+            assert tex.children[0].asset_type == AssetType.TEXTURE
+            assert tex.children[0].status == AssetStatus.LOCAL
+
+    def test_add_assets_grouped_files_create_nested_composite_with_resolutions(self, tmp_path: Path) -> None:
+        """Grouped textures should become nested composites with resolution leaf assets."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(db=db)
+
+        textures_dir = tmp_path / "textures"
+        textures_dir.mkdir()
+        (textures_dir / "brick_diffuse_2k.png").write_bytes(b"fake")
+        (textures_dir / "brick_diffuse_4k.png").write_bytes(b"fake")
+        (textures_dir / "brick_normal_2k.png").write_bytes(b"fake")
+
+        added = plugin.add_assets(textures_dir)
+
+        assert len(added) == 1
+        assert isinstance(added[0], CompositeAsset)
+
+        material = added[0]
+        assert material.composite_type == CompositeType.MATERIAL
+        assert material.name == "brick"
+
+        diffuse = next(
+            c for c in material.children
+            if isinstance(c, CompositeAsset) and c.name == "diffuse"
+        )
+        assert len(diffuse.children) == 2
+        assert all(isinstance(a, Asset) for a in diffuse.children)
+        assert {a.metadata.get("resolution") for a in diffuse.children} == {"2k", "4k"}
+
+        normal = next(
+            c for c in material.children
+            if isinstance(c, CompositeAsset) and c.name == "normal"
+        )
+        assert len(normal.children) == 1
+        assert isinstance(normal.children[0], Asset)
+        assert normal.children[0].metadata.get("resolution") == "2k"
+
+    def test_add_assets_mixed_grouped_and_standalone(self, tmp_path: Path) -> None:
+        """Mixed imports should return composites plus standalone Assets."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(db=db)
+
+        assets_dir = tmp_path / "assets"
+        assets_dir.mkdir()
+        (assets_dir / "brick_diffuse_2k.png").write_bytes(b"fake")
+        (assets_dir / "brick_normal_2k.png").write_bytes(b"fake")
+        (assets_dir / "chair.obj").write_bytes(b"fake")
+
+        added = plugin.add_assets(assets_dir)
+
+        assert len(added) == 2
+        assert any(isinstance(i, CompositeAsset) and i.composite_type == CompositeType.MATERIAL for i in added)
+        assert any(isinstance(i, Asset) and i.asset_type == AssetType.MODEL for i in added)
+
+    def test_add_assets_grouping_disabled_returns_all_assets(self, tmp_path: Path) -> None:
+        """When grouping is disabled, all imported files should be leaf Assets."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(db=db, grouping_enabled=False)
+
+        assets_dir = tmp_path / "textures"
+        assets_dir.mkdir()
+        (assets_dir / "brick_diffuse_2k.png").write_bytes(b"fake")
+        (assets_dir / "brick_normal_2k.png").write_bytes(b"fake")
+
+        added = plugin.add_assets(assets_dir)
+
+        assert len(added) == 2
+        assert all(isinstance(i, Asset) for i in added)
+        assert {i.asset_type for i in added if isinstance(i, Asset)} == {AssetType.TEXTURE}
+
+    def test_add_assets_custom_grouping_pattern(self, tmp_path: Path) -> None:
+        """Custom grouping patterns should be supported."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(
+            db=db,
+            grouping_enabled=True,
+            grouping_pattern="{basename}-{maptype}-{resolution}.{ext}",
+        )
+
+        assets_dir = tmp_path / "textures"
+        assets_dir.mkdir()
+        (assets_dir / "brick-diffuse-2k.png").write_bytes(b"fake")
+        (assets_dir / "brick-normal-2k.png").write_bytes(b"fake")
+
+        added = plugin.add_assets(assets_dir)
+
+        assert len(added) == 1
+        assert isinstance(added[0], CompositeAsset)
+        assert added[0].composite_type == CompositeType.MATERIAL
+        assert added[0].name == "brick"
+
+    def test_add_assets_groups_model_variants_into_model_composite(self, tmp_path: Path) -> None:
+        """Multiple model variants of the same basename should group into a MODEL composite."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(db=db)
+
+        assets_dir = tmp_path / "models"
+        assets_dir.mkdir()
+        (assets_dir / "chair.obj").write_bytes(b"fake obj")
+        (assets_dir / "chair.fbx").write_bytes(b"fake fbx")
+
+        added = plugin.add_assets(assets_dir)
+
+        assert len(added) == 1
+        assert isinstance(added[0], CompositeAsset)
+
+        model = added[0]
+        assert model.composite_type == CompositeType.MODEL
+        assert model.name == "chair"
+        assert len(model.children) == 2
+        assert all(isinstance(c, Asset) for c in model.children)
+        assert all(c.asset_type == AssetType.MODEL for c in model.children)  # type: ignore[attr-defined]
+        assert {c.metadata.get("format") for c in model.children} == {"obj", "fbx"}
 
     def test_add_assets_from_directory_adds_model_files(self, tmp_path: Path) -> None:
         """Should add model files with correct type."""

@@ -198,7 +198,7 @@ class SupportsLocalImport(Protocol):
     and add them to the asset library.
     """
 
-    def add_assets(self, paths: Path | list[Path]) -> list[StandardAsset]:
+    def add_assets(self, paths: Path | list[Path]) -> list[Browsable]:
         """
         Add assets from files or directories.
 
@@ -210,7 +210,7 @@ class SupportsLocalImport(Protocol):
             paths: Single path or list of paths (files or directories)
 
         Returns:
-            List of StandardAsset objects that were added
+            List of top-level Browsable items that were added (Assets and/or CompositeAssets)
         """
         ...
 
