@@ -249,6 +249,31 @@ class TabPresenter(QObject):
 
     # ASYNC HELPERS
 
+    async def _close_plugin_resources(self) -> None:
+        """
+        Best-effort cleanup for plugin-held async resources (e.g. aiohttp sessions).
+
+        In the current standalone UI, async work is often executed on short-lived event
+        loops (see `_run_async`). If an aiohttp session/connector is left open when a loop
+        is torn down, Python will warn about pending aiohttp cleanup tasks.
+        """
+        close_fn = getattr(self._plugin, "close", None)
+        if close_fn is None or not callable(close_fn):
+            return
+
+        try:
+            maybe = close_fn()
+            if asyncio.iscoroutine(maybe):
+                await maybe
+        except Exception as e:
+            logger.debug(f"Plugin resource cleanup failed: {e}")
+
+    async def _run_with_cleanup(self, coro) -> None:
+        try:
+            await coro
+        finally:
+            await self._close_plugin_resources()
+
     def _run_async(self, coro) -> asyncio.Task | None:
         """
         Run an async coroutine, handling event loop setup.
@@ -260,9 +285,9 @@ class TabPresenter(QObject):
             return loop.create_task(coro)
         except RuntimeError:
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(coro)
+                # In standalone mode we don't have a persistent asyncio loop integrated with Qt.
+                # Use `asyncio.run()` so the loop is created and closed cleanly.
+                asyncio.run(self._run_with_cleanup(coro))
                 return None
             except Exception as e:
                 logger.error(f"Failed to run async task: {e}")
