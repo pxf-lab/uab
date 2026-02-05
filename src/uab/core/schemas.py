@@ -119,6 +119,28 @@ COMPOSITE_SCHEMAS: dict[CompositeType, CompositeTypeSchema] = {
         optional_roles={"main", "detail", "proxy"},
         description="Multi-part model collection",
     ),
+    # High-level composites (mixed children)
+    CompositeType.CHARACTER: CompositeTypeSchema(
+        composite_type=CompositeType.CHARACTER,
+        allowed_child_types={Asset, CompositeAsset},
+        expected_child_composite_types={CompositeType.MODEL_SET, CompositeType.MATERIAL},
+        required_roles={"geometry"},
+        optional_roles={
+            "rig",
+            "skeleton",
+            "material",
+            "skin",
+            "lod0",
+            "lod1",
+            "lod2",
+        },
+        description="Character with geometry, optional rig and materials",
+    ),
+    CompositeType.SCENE: CompositeTypeSchema(
+        composite_type=CompositeType.SCENE,
+        allowed_child_types={Asset, CompositeAsset},
+        description="Arbitrary collection of assets and composites",
+    ),
 }
 
 

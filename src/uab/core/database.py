@@ -2,6 +2,7 @@
 
 import fcntl
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -136,6 +137,381 @@ def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
     conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
 
 
+def _decode_metadata_payload(payload: str | None) -> dict[str, Any]:
+    if not payload:
+        return {}
+    try:
+        value = json.loads(payload)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _encode_metadata_payload(meta: dict[str, Any] | None) -> str | None:
+    if not meta:
+        return None
+    try:
+        return json.dumps(meta)
+    except TypeError:
+        # Non-serializable metadata should not block migration; drop it.
+        return None
+
+
+def _extract_variants(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize legacy metadata['variants'] into a list of dict entries."""
+    variants_any = meta.get("variants")
+    if not variants_any:
+        return []
+
+    if isinstance(variants_any, list):
+        return [v for v in variants_any if isinstance(v, dict)]
+
+    if isinstance(variants_any, dict):
+        out: list[dict[str, Any]] = []
+        for k, v_any in variants_any.items():
+            if not isinstance(v_any, dict):
+                continue
+            entry = dict(v_any)
+            entry.setdefault("key", str(k))
+            out.append(entry)
+        return out
+
+    return []
+
+
+def _infer_variant_key_from_path(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+    m = re.search(r"(?i)(?P<res>\d+\s*k)\b", str(path_value))
+    if not m:
+        return None
+    return m.group("res").replace(" ", "").lower()
+
+
+def _resolution_sort_key(value: str) -> int:
+    m = re.match(r"(?i)^(?P<num>\d+)\s*k$", value.strip())
+    if not m:
+        return 0
+    try:
+        return int(m.group("num"))
+    except ValueError:
+        return 0
+
+
+def _asset_type_to_composite_type(asset_type_value: str) -> CompositeType:
+    """Map legacy AssetType string to a leaf CompositeType."""
+    try:
+        at = AssetType(asset_type_value)
+    except Exception:
+        return CompositeType.TEXTURE
+
+    if at == AssetType.HDRI:
+        return CompositeType.HDRI
+    if at == AssetType.MODEL:
+        return CompositeType.MODEL
+    return CompositeType.TEXTURE
+
+
+def _migrate_assets_with_variants(conn: sqlite3.Connection) -> None:
+    """Convert legacy StandardAsset rows with metadata.variants into composites + leaf assets."""
+    assets_cols = _get_table_columns(conn, "assets")
+    type_col = "asset_type" if "asset_type" in assets_cols else "type"
+
+    # Ensure required v3 columns exist before start!
+    if "remote_url" not in assets_cols:
+        conn.execute("ALTER TABLE assets ADD COLUMN remote_url TEXT")
+    if "file_size" not in assets_cols:
+        conn.execute("ALTER TABLE assets ADD COLUMN file_size INTEGER")
+
+    query = f"""
+        SELECT
+            id, source, external_id, name,
+            {type_col} AS type_value,
+            status, local_path, remote_url,
+            thumbnail_url, thumbnail_path, file_size,
+            metadata
+        FROM assets
+    """
+
+    rows = list(conn.execute(query))
+    for row in rows:
+        meta = _decode_metadata_payload(row["metadata"])
+        variants = _extract_variants(meta)
+        if not variants:
+            continue
+
+        # Best-effort: infer which variant the root asset row currently represents.
+        root_local_path = row["local_path"]
+        root_remote_url = row["remote_url"]
+
+        base_key_any = None
+        if isinstance(meta.get("resolution"), str):
+            base_key_any = meta.get("resolution")
+        if not base_key_any:
+            base_key_any = _infer_variant_key_from_path(
+                root_local_path or row["external_id"])
+
+        # Normalize variants into a dict keyed by string key.
+        by_key: dict[str, dict[str, Any]] = {}
+        for v in variants:
+            key_any = v.get("key") or v.get("resolution") or v.get("name")
+            if not isinstance(key_any, str):
+                continue
+            key = key_any.strip()
+            if not key:
+                continue
+            key = key.replace(" ", "").lower()
+            by_key[key] = {**v, "key": key}
+
+        if not by_key:
+            meta.pop("variants", None)
+            conn.execute(
+                "UPDATE assets SET metadata = ? WHERE id = ?",
+                (_encode_metadata_payload(meta), row["id"]),
+            )
+            continue
+
+        base_key = (
+            str(base_key_any).strip().replace(" ", "").lower()
+            if isinstance(base_key_any, str) and base_key_any.strip()
+            else sorted(by_key.keys())[0]
+        )
+
+        # Ensure base entry exists; if variant ommits, get from rot
+        if base_key not in by_key:
+            by_key[base_key] = {
+                "key": base_key,
+                "status": row["status"],
+                "local_path": root_local_path,
+                "remote_url": root_remote_url,
+                "file_size": row["file_size"],
+            }
+
+        root_id = row["id"]
+        source = row["source"]
+        root_external_id = row["external_id"]
+        root_name = row["name"]
+        type_value = row["type_value"]
+
+        composite_type = _asset_type_to_composite_type(str(type_value))
+
+        # Create/Upsert the composite root (uses the *original* external_id)
+        composite_meta = dict(meta)
+        composite_meta.pop("variants", None)
+
+        conn.execute(
+            """
+            INSERT INTO composites (
+                id, source, external_id, name, composite_type,
+                thumbnail_url, thumbnail_path, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source, external_id) DO UPDATE SET
+                id = excluded.id,
+                name = excluded.name,
+                composite_type = excluded.composite_type,
+                thumbnail_url = excluded.thumbnail_url,
+                thumbnail_path = excluded.thumbnail_path,
+                metadata = excluded.metadata
+            """,
+            (
+                root_id,
+                source,
+                root_external_id,
+                root_name,
+                composite_type.value,
+                row["thumbnail_url"],
+                row["thumbnail_path"],
+                _encode_metadata_payload(composite_meta),
+            ),
+        )
+
+        # re-write the root asset row as the base variant, and create additional leaf assets
+        base = by_key[base_key]
+        base_external_id = (
+            root_external_id
+            if root_external_id.endswith(f":{base_key}")
+            else f"{root_external_id}:{base_key}"
+        )
+
+        base_meta = dict(composite_meta)
+        # always override per-variant fields
+        base_meta["resolution"] = base_key
+        base_meta["role"] = base_key
+
+        conn.execute(
+            f"""
+            UPDATE assets SET
+                external_id = ?,
+                name = ?,
+                {type_col} = ?,
+                status = ?,
+                local_path = ?,
+                remote_url = ?,
+                thumbnail_url = ?,
+                thumbnail_path = ?,
+                file_size = ?,
+                metadata = ?
+            WHERE id = ?
+            """,
+            (
+                base_external_id,
+                f"{root_name} ({base_key})",
+                str(type_value),
+                str(base.get("status") or row["status"]),
+                base.get("local_path") or root_local_path,
+                base.get("remote_url") or root_remote_url,
+                row["thumbnail_url"],
+                row["thumbnail_path"],
+                base.get("file_size") or row["file_size"],
+                _encode_metadata_payload(base_meta),
+                root_id,
+            ),
+        )
+
+        for key in sorted(by_key.keys(), key=_resolution_sort_key):
+            if key == base_key:
+                continue
+
+            v = by_key[key]
+            child_id = f"{root_id}:{key}"
+            child_external_id = f"{root_external_id}:{key}"
+            child_meta = dict(composite_meta)
+            # Always override per-variant fields.
+            child_meta["resolution"] = key
+            child_meta["role"] = key
+
+            status_value = v.get("status")
+            if not isinstance(status_value, str):
+                status_value = (
+                    AssetStatus.LOCAL.value
+                    if v.get("local_path")
+                    else AssetStatus.CLOUD.value
+                )
+
+            conn.execute(
+                """
+                INSERT INTO assets (
+                    id, source, external_id, name, asset_type, status,
+                    local_path, remote_url, thumbnail_url, thumbnail_path,
+                    file_size, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source, external_id) DO UPDATE SET
+                    id = excluded.id,
+                    name = excluded.name,
+                    asset_type = excluded.asset_type,
+                    status = excluded.status,
+                    local_path = excluded.local_path,
+                    remote_url = excluded.remote_url,
+                    thumbnail_url = excluded.thumbnail_url,
+                    thumbnail_path = excluded.thumbnail_path,
+                    file_size = excluded.file_size,
+                    metadata = excluded.metadata
+                """,
+                (
+                    child_id,
+                    source,
+                    child_external_id,
+                    f"{root_name} ({key})",
+                    str(type_value),
+                    status_value,
+                    v.get("local_path"),
+                    v.get("remote_url") or v.get("url"),
+                    row["thumbnail_url"],
+                    row["thumbnail_path"],
+                    v.get("file_size") or v.get("size"),
+                    _encode_metadata_payload(child_meta),
+                ),
+            )
+
+        conn.execute(
+            "DELETE FROM composite_children WHERE parent_composite_id = ?",
+            (root_id,),
+        )
+
+        ordered_keys = sorted(by_key.keys(), key=_resolution_sort_key)
+        for idx, key in enumerate(ordered_keys):
+            child_id = root_id if key == base_key else f"{root_id}:{key}"
+            conn.execute(
+                """
+                INSERT INTO composite_children (
+                    parent_composite_id, child_asset_id, role, sort_order
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (root_id, child_id, key, idx),
+            )
+
+
+def _migrate_legacy_composite_members(conn: sqlite3.Connection, current_version: int) -> None:
+    """Convert legacy composite_members table into composite_children if present."""
+    if not _table_exists(conn, "composite_members"):
+        return
+
+    # Backup the legacy table for safety.
+    conn.execute(
+        f"CREATE TABLE IF NOT EXISTS composite_members_backup_v{current_version} "
+        "AS SELECT * FROM composite_members"
+    )
+
+    cols = _get_table_columns(conn, "composite_members")
+
+    parent_col = "composite_id" if "composite_id" in cols else (
+        "parent_id" if "parent_id" in cols else None
+    )
+    child_asset_col = "asset_id" if "asset_id" in cols else (
+        "member_id" if "member_id" in cols else None
+    )
+    role_col = "role" if "role" in cols else None
+    sort_col = "sort_order" if "sort_order" in cols else (
+        "order" if "order" in cols else None
+    )
+
+    if not parent_col or not child_asset_col:
+        # Can't interpret this table safely.
+        return
+
+    rows = list(
+        conn.execute(
+            f"SELECT * FROM composite_members ORDER BY {sort_col or parent_col}"
+        )
+    )
+
+    # Group by parent, then replace children lists deterministically.
+    by_parent: dict[str, list[sqlite3.Row]] = {}
+    for r in rows:
+        parent = r[parent_col]
+        if not isinstance(parent, str) or not parent:
+            continue
+        by_parent.setdefault(parent, []).append(r)
+
+    for parent, members in by_parent.items():
+        conn.execute(
+            "DELETE FROM composite_children WHERE parent_composite_id = ?",
+            (parent,),
+        )
+        for idx, r in enumerate(members):
+            child_id = r[child_asset_col]
+            if not isinstance(child_id, str) or not child_id:
+                continue
+            role = r[role_col] if role_col else None
+            sort_order = r[sort_col] if sort_col else idx
+            try:
+                sort_order_int = int(sort_order)
+            except Exception:
+                sort_order_int = idx
+
+            conn.execute(
+                """
+                INSERT INTO composite_children (
+                    parent_composite_id, child_asset_id, role, sort_order
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (parent, child_id, role, sort_order_int),
+            )
+
+    # Drop legacy table after successful conversion to avoid re-processing.
+    conn.execute("DROP TABLE composite_members")
+
+
 def migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
     """Migrate legacy schema to v3 (recursive composition)."""
     current_version = _get_schema_version(conn) or 1
@@ -169,9 +545,36 @@ def migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE assets ADD COLUMN file_size INTEGER")
         assets_cols.add("file_size")
 
-    # Ensure new tables, indexes, and view exist
+    # Alter composites table if it exists (older schemas used `type`).
+    if _table_exists(conn, "composites"):
+        comp_cols = _get_table_columns(conn, "composites")
+        if "type" in comp_cols and "composite_type" not in comp_cols:
+            conn.execute(
+                "ALTER TABLE composites RENAME COLUMN type TO composite_type")
+            comp_cols.remove("type")
+            comp_cols.add("composite_type")
+
+        if "thumbnail_url" not in comp_cols:
+            conn.execute("ALTER TABLE composites ADD COLUMN thumbnail_url TEXT")
+            comp_cols.add("thumbnail_url")
+        if "thumbnail_path" not in comp_cols:
+            conn.execute("ALTER TABLE composites ADD COLUMN thumbnail_path TEXT")
+            comp_cols.add("thumbnail_path")
+        if "metadata" not in comp_cols:
+            conn.execute("ALTER TABLE composites ADD COLUMN metadata TEXT")
+            comp_cols.add("metadata")
+
     conn.execute("DROP VIEW IF EXISTS composite_tree")
     conn.executescript(_SCHEMA)
+
+    conn.execute("BEGIN")
+    try:
+        _migrate_assets_with_variants(conn)
+        _migrate_legacy_composite_members(conn, current_version=current_version)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
     _set_schema_version(conn, SCHEMA_VERSION)
 
@@ -196,14 +599,47 @@ class AssetDatabase:
     def _init_db(self) -> None:
         """Initialize database schema."""
         with self._write_lock(), self._connect() as conn:
+            # Preflight legacy composite schemas: older DBs may have `composites.type`
+            # instead of `composites.composite_type`, which breaks v3 index creatio
+            if _table_exists(conn, "composites"):
+                cols = _get_table_columns(conn, "composites")
+                if "composite_type" not in cols:
+                    if "type" in cols:
+                        conn.execute(
+                            "ALTER TABLE composites RENAME COLUMN type TO composite_type"
+                        )
+                    else:
+                        conn.execute(
+                            "ALTER TABLE composites ADD COLUMN composite_type TEXT"
+                        )
+
+                # Ensure v3 columns exist so `_SCHEMA` can create indexes safely.
+                cols = _get_table_columns(conn, "composites")
+                if "thumbnail_url" not in cols:
+                    conn.execute(
+                        "ALTER TABLE composites ADD COLUMN thumbnail_url TEXT"
+                    )
+                if "thumbnail_path" not in cols:
+                    conn.execute(
+                        "ALTER TABLE composites ADD COLUMN thumbnail_path TEXT"
+                    )
+                if "metadata" not in cols:
+                    conn.execute(
+                        "ALTER TABLE composites ADD COLUMN metadata TEXT"
+                    )
+
             conn.executescript(_SCHEMA)
 
             current_version = _get_schema_version(conn)
             if current_version is None:
                 # infer version from the assets table for robustness
                 cols = _get_table_columns(conn, "assets")
-                inferred = 1 if (
-                    "type" in cols and "asset_type" not in cols) else SCHEMA_VERSION
+                if "type" in cols and "asset_type" not in cols:
+                    inferred = 1
+                else:
+                    # If required v3 columns are missing, treat as pre-v3.
+                    required = {"asset_type", "remote_url", "file_size"}
+                    inferred = SCHEMA_VERSION if required <= cols else 2
                 _set_schema_version(conn, inferred)
                 current_version = inferred
 

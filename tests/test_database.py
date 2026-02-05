@@ -1,5 +1,6 @@
 """Tests for database layer."""
 
+import json
 import sqlite3
 from pathlib import Path
 import pytest
@@ -376,3 +377,193 @@ def test_migrate_v1_database_with_existing_data(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='assets_backup_v1'"
         ).fetchone()
         assert row is not None
+
+
+def test_migrate_v1_database_with_variants_creates_composite_and_leaf_assets(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy_variants.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    _create_v1_schema(conn)
+
+    file_2k = tmp_path / "rusty_diff_2k.png"
+    file_2k.write_bytes(b"data")
+
+    conn.execute(
+        """
+        INSERT INTO assets (id, source, external_id, name, type, status, local_path, thumbnail_url, thumbnail_path, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "legacy-tex",
+            "polyhaven",
+            "rusty_metal:diffuse",
+            "Rusty Diffuse",
+            "texture",
+            "local",
+            str(file_2k),
+            None,
+            None,
+            json.dumps(
+                {
+                    "map_type": "diffuse",
+                    "resolution": "2k",
+                    "variants": [
+                        {
+                            "key": "1k",
+                            "status": "cloud",
+                            "remote_url": "https://example.com/rusty_diff_1k.png",
+                        },
+                        {
+                            "key": "2k",
+                            "status": "local",
+                            "local_path": str(file_2k),
+                            "remote_url": "https://example.com/rusty_diff_2k.png",
+                        },
+                    ],
+                }
+            ),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    db = AssetDatabase(db_path)
+
+    # Composite root created.
+    comp = db.get_composite("legacy-tex")
+    assert comp is not None
+    assert comp.composite_type == CompositeType.TEXTURE
+    assert comp.external_id == "rusty_metal:diffuse"
+
+    loaded = db.get_composite_with_children("legacy-tex", depth=1)
+    assert loaded is not None
+    assert [getattr(c, "metadata", {}).get("role") for c in loaded.children] == [
+        "1k",
+        "2k",
+    ]
+
+    # Root asset row rewritten as base variant.
+    base = db.get_asset("legacy-tex")
+    assert base is not None
+    assert base.external_id == "rusty_metal:diffuse:2k"
+    assert base.metadata.get("resolution") == "2k"
+
+    # Other variant exists as a new asset row.
+    v1 = db.get_asset("legacy-tex:1k")
+    assert v1 is not None
+    assert v1.external_id == "rusty_metal:diffuse:1k"
+    assert v1.metadata.get("resolution") == "1k"
+
+    # The legacy root external_id should no longer exist as an asset entry.
+    assert db.get_asset_by_external_id("polyhaven", "rusty_metal:diffuse") is None
+
+
+def _create_v2_schema_with_composites(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS assets (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            local_path TEXT,
+            thumbnail_url TEXT,
+            thumbnail_path TEXT,
+            metadata TEXT,
+            UNIQUE(source, external_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS composites (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            thumbnail_url TEXT,
+            thumbnail_path TEXT,
+            metadata TEXT,
+            UNIQUE(source, external_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS composite_members (
+            composite_id TEXT NOT NULL,
+            asset_id TEXT NOT NULL,
+            role TEXT,
+            sort_order INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY
+        );
+        DELETE FROM schema_version;
+        INSERT INTO schema_version (version) VALUES (2);
+        """
+    )
+
+
+def test_migrate_legacy_composite_members_to_composite_children(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_composites.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    _create_v2_schema_with_composites(conn)
+
+    conn.execute(
+        """
+        INSERT INTO composites (id, source, external_id, name, type, thumbnail_url, thumbnail_path, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("c1", "polyhaven", "rusty_metal", "Rusty Metal", "material", None, None, "{}"),
+    )
+    conn.execute(
+        """
+        INSERT INTO assets (id, source, external_id, name, type, status, local_path, thumbnail_url, thumbnail_path, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("a1", "polyhaven", "rusty_metal:diffuse", "diffuse", "texture", "local", None, None, None, "{}"),
+    )
+    conn.execute(
+        """
+        INSERT INTO assets (id, source, external_id, name, type, status, local_path, thumbnail_url, thumbnail_path, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("a2", "polyhaven", "rusty_metal:normal", "normal", "texture", "cloud", None, None, None, "{}"),
+    )
+    conn.execute(
+        """
+        INSERT INTO composite_members (composite_id, asset_id, role, sort_order)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("c1", "a1", "diffuse", 0),
+    )
+    conn.execute(
+        """
+        INSERT INTO composite_members (composite_id, asset_id, role, sort_order)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("c1", "a2", "normal", 1),
+    )
+    conn.commit()
+    conn.close()
+
+    db = AssetDatabase(db_path)
+
+    # legacy table should have been backed up + dropped.
+    with db._connect() as conn2:
+        row = conn2.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='composite_members'"
+        ).fetchone()
+        assert row is None
+        backup = conn2.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='composite_members_backup_v2'"
+        ).fetchone()
+        assert backup is not None
+
+    loaded = db.get_composite_with_children("c1", depth=1)
+    assert loaded is not None
+    assert loaded.composite_type == CompositeType.MATERIAL
+    assert [c.id for c in loaded.children] == ["a1", "a2"]
+    assert [c.metadata.get("role") for c in loaded.children] == ["diffuse", "normal"]
