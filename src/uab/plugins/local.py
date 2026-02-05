@@ -183,10 +183,12 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
 
         all_local_assets = self._db.get_local_assets()
 
-        # Only group assets imported via this plugin; other sources are passed through
-        # as individual leaf assets (for now).
+        # Group assets imported via this plugin (source == "local") using filename
+        # heuristics. For other sources (e.g. PolyHaven), prefer surfacing any
+        # persisted composite roots from the database so downloaded HDRIs/materials
+        # appear as a single CompositeAsset locally.
         local_source_assets = [a for a in all_local_assets if a.source == self.plugin_id]
-        other_assets = [a for a in all_local_assets if a.source != self.plugin_id]
+        other_source_assets = [a for a in all_local_assets if a.source != self.plugin_id]
 
         grouped_roots: list[Browsable] = []
         grouped_asset_ids: set[str] = set()
@@ -195,7 +197,37 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
 
         standalone_local_assets = [a for a in local_source_assets if a.id not in grouped_asset_ids]
 
-        items: list[Browsable] = [*grouped_roots, *standalone_local_assets, *other_assets]
+        composite_roots: list[CompositeAsset] = []
+        composite_local_asset_ids: set[str] = set()
+        try:
+            root_ids = self._db.get_root_composite_ids_with_local_descendants()
+        except Exception:
+            root_ids = []
+
+        for cid in root_ids:
+            composite = self._db.get_composite_with_children(cid)
+            if not composite:
+                continue
+            pruned = self._prune_composite_to_local(composite)
+            if not pruned:
+                continue
+            composite_roots.append(pruned)
+            for a in pruned.get_all_assets():
+                if a.status == AssetStatus.LOCAL:
+                    composite_local_asset_ids.add(a.id)
+
+        # Avoid duplicating leaf assets that are already represented under a composite root
+        standalone_other_assets = [
+            a for a in other_source_assets if a.id not in composite_local_asset_ids
+        ]
+
+        composite_roots.sort(key=lambda c: c.name.lower())
+        items: list[Browsable] = [
+            *grouped_roots,
+            *standalone_local_assets,
+            *composite_roots,
+            *standalone_other_assets,
+        ]
 
         if not q:
             return items
@@ -753,6 +785,33 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
                 if isinstance(child, CompositeAsset) and self._item_matches_query(child, q):
                     return True
         return False
+
+    def _prune_composite_to_local(self, composite: CompositeAsset) -> CompositeAsset | None:
+        """
+        Return `composite` pruned to LOCAL descendant Assets only.
+
+        Any composite nodes that end up empty after pruning are removed.
+        """
+
+        def _prune(node: Browsable) -> Browsable | None:
+            if isinstance(node, Asset):
+                return node if node.status == AssetStatus.LOCAL else None
+
+            if isinstance(node, CompositeAsset):
+                kept: list[Browsable] = []
+                for child in node.children:
+                    pruned_child = _prune(child)
+                    if pruned_child is not None:
+                        kept.append(pruned_child)
+                if not kept:
+                    return None
+                node.children = kept
+                return node
+
+            return None
+
+        pruned = _prune(composite)
+        return pruned if isinstance(pruned, CompositeAsset) else None
 
     def _composite_contains_any_asset_id(self, composite: CompositeAsset, asset_ids: set[str]) -> bool:
         """Return True if any descendant Asset has an ID in asset_ids."""

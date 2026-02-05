@@ -1262,3 +1262,35 @@ class AssetDatabase:
 
         with self._connect() as conn:
             return _load(conn, composite_id, depth, set())
+
+    def get_root_composite_ids_with_local_descendants(self) -> list[str]:
+        """
+        Return root composite IDs that contain at least one LOCAL descendant Asset.
+
+        This is useful for "local library" views that want to surface downloaded
+        composite trees (e.g. PolyHaven HDRIs/materials/models) as a single
+        top-level item instead of many leaf Assets.
+        """
+        query = """
+            WITH RECURSIVE ancestors(id) AS (
+                SELECT DISTINCT cc.parent_composite_id
+                FROM composite_children cc
+                JOIN assets a ON a.id = cc.child_asset_id
+                WHERE a.status = ?
+
+                UNION
+
+                SELECT DISTINCT cc.parent_composite_id
+                FROM composite_children cc
+                JOIN ancestors an ON an.id = cc.child_composite_id
+            )
+            SELECT DISTINCT an.id
+            FROM ancestors an
+            WHERE NOT EXISTS (
+                SELECT 1 FROM composite_children cc2
+                WHERE cc2.child_composite_id = an.id
+            )
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(query, (AssetStatus.LOCAL.value,))
+            return [row["id"] for row in cursor if row and row["id"]]

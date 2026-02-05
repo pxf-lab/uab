@@ -173,14 +173,14 @@ class AssetLibraryPlugin(Plugin, ABC):
         """True if this plugin supports removing assets."""
         ...
 
-    def get_settings_schema(self, asset: StandardAsset) -> dict[str, Any] | None:
+    def get_settings_schema(self, item: object) -> dict[str, Any] | None:
         """
         Return options schema for import settings dialog.
 
-        Override to provide asset-specific import options.
+        Override to provide item-specific import options (Asset or CompositeAsset).
 
         Args:
-            asset: The asset being imported
+            item: The item being imported
 
         Returns:
             Schema dict or None if no settings needed.
