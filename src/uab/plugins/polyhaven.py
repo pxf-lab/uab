@@ -349,8 +349,9 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                 status=AssetStatus.CLOUD,
                 local_path=None,
                 remote_url=remote_url,
-                thumbnail_url=None,
-                thumbnail_path=None,
+                # propagate to all resolution/format variants
+                thumbnail_url=hdri.thumbnail_url,
+                thumbnail_path=hdri.thumbnail_path,
                 file_size=file_size,
                 metadata={"role": resolution,
                           "resolution": resolution, "format": chosen_fmt},
@@ -413,8 +414,9 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                         status=AssetStatus.CLOUD,
                         local_path=None,
                         remote_url=remote_url,
-                        thumbnail_url=None,
-                        thumbnail_path=None,
+                        # propagate to all resolution/format variants
+                        thumbnail_url=model.thumbnail_url,
+                        thumbnail_path=model.thumbnail_path,
                         file_size=file_size,
                         metadata={"format": fmt, "resolution": resolution},
                     )

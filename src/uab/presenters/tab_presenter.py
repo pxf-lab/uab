@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from uab.core.interfaces import Browsable, SupportsLocalImport
 from uab.core.models import Asset, AssetStatus, AssetType, CompositeAsset, StandardAsset
+from uab.core.thumbnails import propagate_preferred_thumbnail
 from uab.ui.utils import ThumbnailLoaderBase
 
 if TYPE_CHECKING:
@@ -251,11 +252,9 @@ class TabPresenter(QObject):
 
     async def _close_plugin_resources(self) -> None:
         """
-        Best-effort cleanup for plugin-held async resources (e.g. aiohttp sessions).
+        Best-effort cleanup for plugin-held async resources (here specifically for aiohttp sessions
 
-        In the current standalone UI, async work is often executed on short-lived event
-        loops (see `_run_async`). If an aiohttp session/connector is left open when a loop
-        is torn down, Python will warn about pending aiohttp cleanup tasks.
+        If an aiohttp session/connector is left open when a loop is torn down, Python will warn about pending aiohttp cleanup tasks.
         """
         close_fn = getattr(self._plugin, "close", None)
         if close_fn is None or not callable(close_fn):
@@ -285,8 +284,6 @@ class TabPresenter(QObject):
             return loop.create_task(coro)
         except RuntimeError:
             try:
-                # In standalone mode we don't have a persistent asyncio loop integrated with Qt.
-                # Use `asyncio.run()` so the loop is created and closed cleanly.
                 asyncio.run(self._run_with_cleanup(coro))
                 return None
             except Exception as e:
@@ -410,6 +407,10 @@ class TabPresenter(QObject):
         if thumb_path and item_id in self._item_cache:
             item = self._item_cache[item_id]
             item.thumbnail_path = thumb_path
+            if isinstance(item, CompositeAsset):
+                # If this composite contains LOCAL HDRI/Model leaf assets, ensure they
+                # use the downloaded thumbnail instead of dynamically rendering previews.
+                propagate_preferred_thumbnail(item)
             self._item_cache[item_id] = item
 
     @Slot()
@@ -527,6 +528,9 @@ class TabPresenter(QObject):
             except Exception as e:
                 logger.error(f"Failed to expand composite {item.name}: {e}")
                 self.status_message.emit(f"Failed to expand {item.name}: {e}")
+
+        if isinstance(item, CompositeAsset):
+            propagate_preferred_thumbnail(item)
 
         # UI will be updated to support composites
         self._view.show_detail(item)

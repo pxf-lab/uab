@@ -34,6 +34,7 @@ from uab.core.models import (
     CompositeType,
     StandardAsset,
 )
+from uab.core.thumbnails import propagate_preferred_thumbnail
 from uab.plugins.base import SharedAssetLibraryUtils
 
 if TYPE_CHECKING:
@@ -211,6 +212,7 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             pruned = self._prune_composite_to_local(composite)
             if not pruned:
                 continue
+            propagate_preferred_thumbnail(pruned)
             composite_roots.append(pruned)
             for a in pruned.get_all_assets():
                 if a.status == AssetStatus.LOCAL:
