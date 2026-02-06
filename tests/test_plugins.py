@@ -829,12 +829,14 @@ class TestPolyHavenPluginCompositeTree:
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
 
+        thumb_url = "https://example.com/sunset_thumb.png"
         hdri = CompositeAsset(
             id="polyhaven-sunset_hdri",
             source="polyhaven",
             external_id="sunset_hdri",
             name="Sunset HDRI",
             composite_type=CompositeType.HDRI,
+            thumbnail_url=thumb_url,
             metadata={"categories": ["outdoor"]},
             children=[],
         )
@@ -855,12 +857,71 @@ class TestPolyHavenPluginCompositeTree:
         assert all(isinstance(a, Asset) for a in expanded.children)
         by_res = {a.metadata["resolution"]: a for a in expanded.children}
         assert by_res["1k"].remote_url == "https://example.com/sunset_1k.hdr"
+        assert by_res["1k"].thumbnail_url == thumb_url
         assert by_res["1k"].metadata["format"] == "hdr"
         assert by_res["2k"].remote_url == "https://example.com/sunset_2k.exr"
+        assert by_res["2k"].thumbnail_url == thumb_url
         assert by_res["2k"].file_size == 20
 
         db_children = db.get_composite_children(expanded.id)
         assert len(db_children) == 2
+
+
+    def test_local_library_groups_downloaded_polyhaven_hdri_into_single_composite(self, tmp_path: Path) -> None:
+        """Downloaded PolyHaven HDRIs should appear as a single HDRI composite locally."""
+        from uab.plugins.local import LocalLibraryPlugin
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        library_root = tmp_path / "library"
+
+        poly = PolyHavenPlugin(db=db, library_root=library_root)
+        local = LocalLibraryPlugin(db=db, library_root=library_root)
+
+        hdri = CompositeAsset(
+            id="polyhaven-sunset_hdri",
+            source="polyhaven",
+            external_id="sunset_hdri",
+            name="Sunset HDRI",
+            composite_type=CompositeType.HDRI,
+            metadata={"categories": ["outdoor"]},
+            children=[],
+        )
+
+        manifest = {
+            "hdri": {
+                "1k": {"hdr": {"url": "https://example.com/sunset_1k.hdr", "size": 10}},
+                "2k": {"hdr": {"url": "https://example.com/sunset_2k.hdr", "size": 20}},
+            }
+        }
+
+        async def _fake_download(url: str, dest_path: Path, *args, **kwargs) -> Path:  # noqa: ARG001
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(b"data")
+            return dest_path
+
+        with patch.object(poly, "_fetch_json", new_callable=AsyncMock) as mock_fetch, patch.object(
+            poly, "_download_file", new_callable=AsyncMock
+        ) as mock_dl:
+            mock_fetch.return_value = manifest
+            mock_dl.side_effect = _fake_download
+
+            expanded = asyncio.run(poly.expand_composite(hdri))
+            asyncio.run(poly.download_composite(expanded, resolution="2k"))
+
+        results = asyncio.run(local.search("sunset"))
+
+        assert len(results) == 1
+        assert isinstance(results[0], CompositeAsset)
+
+        local_hdri = results[0]
+        assert local_hdri.source == "polyhaven"
+        assert local_hdri.composite_type == CompositeType.HDRI
+        assert local_hdri.name == "Sunset HDRI"
+        assert len(local_hdri.children) == 1
+        assert isinstance(local_hdri.children[0], Asset)
+        assert local_hdri.children[0].status == AssetStatus.LOCAL
+        assert local_hdri.children[0].metadata.get("resolution") == "2k"
 
     def test_expand_model_creates_asset_children(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin
@@ -868,12 +929,14 @@ class TestPolyHavenPluginCompositeTree:
         db = AssetDatabase(db_path=tmp_path / "test.db")
         plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
 
+        thumb_url = "https://example.com/chair_thumb.png"
         model = CompositeAsset(
             id="polyhaven-simple_chair",
             source="polyhaven",
             external_id="simple_chair",
             name="Simple Chair",
             composite_type=CompositeType.MODEL,
+            thumbnail_url=thumb_url,
             metadata={"categories": ["furniture"]},
             children=[],
         )
@@ -900,6 +963,7 @@ class TestPolyHavenPluginCompositeTree:
                 for a in expanded.children} == {"gltf", "fbx"}
         assert any(
             a.remote_url == "https://example.com/chair_1k.fbx" for a in expanded.children)
+        assert all(a.thumbnail_url == thumb_url for a in expanded.children)
 
         db_children = db.get_composite_children(expanded.id)
         assert len(db_children) == 3
