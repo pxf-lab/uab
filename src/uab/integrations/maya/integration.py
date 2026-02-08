@@ -21,6 +21,7 @@ from uab.core.models import (
     CompositeType,
     StandardAsset,
 )
+from uab.integrations.maya._maya import require_cmds
 
 logger = logging.getLogger(__name__)
 
@@ -59,26 +60,16 @@ class MayaIntegration(HostIntegration):
         except Exception as e:
             logger.debug(f"Arnold strategy not available: {e}")
 
-        # Optional: Redshift strategy is only useful if installed
-        try:
-            from uab.integrations.maya.strategies.redshift import RedshiftStrategy
-
-            strategies["redshift"] = RedshiftStrategy()
-        except Exception as e:
-            logger.debug(f"Redshift strategy not available: {e}")
-
         self._strategies = strategies
 
     @property
     def uab_supported_renderers(self) -> list[str]:
         return self._SUPPORTED_RENDERERS.copy()
 
-    # --- Maya helpers (safe imports) -------------------------------------------------
+    # MAYA HELPERS
 
     def _maya_cmds(self):
-        import maya.cmds as cmds  # type: ignore
-
-        return cmds
+        return require_cmds()
 
     def _plugin_available(self, plugin_name: str) -> bool:
         """Return True if a plugin is available (installed) in this Maya."""
@@ -135,7 +126,7 @@ class MayaIntegration(HostIntegration):
                 # Avoid masking original errors
                 pass
 
-    # --- Renderer detection ----------------------------------------------------------
+    # RENDERER DETECTION
 
     def get_host_available_renderers(self) -> list[str]:
         """Return renderers that are available in Maya (installed/usable)."""
@@ -189,7 +180,7 @@ class MayaIntegration(HostIntegration):
             logger.warning(f"No strategy available for renderer: {renderer}")
         return strategy
 
-    # --- Host UI affordances ---------------------------------------------------------
+    # HOST UI AFFORDANCES
 
     @property
     def supports_replace_selection(self) -> bool:
@@ -204,7 +195,7 @@ class MayaIntegration(HostIntegration):
         }
         return labels.get(asset_type, asset_type.value.title())
 
-    # --- Import API ------------------------------------------------------------------
+    # IMPORT API
 
     def import_asset(self, asset: StandardAsset, options: dict[str, Any]) -> None:
         """Import a legacy StandardAsset into Maya."""
@@ -219,7 +210,8 @@ class MayaIntegration(HostIntegration):
                 return
             if asset.type == AssetType.TEXTURE:
                 textures = self._collect_standard_asset_textures(asset)
-                strategy.create_material_from_textures(asset.name, textures, options)
+                strategy.create_material_from_textures(
+                    asset.name, textures, options)
                 return
             if asset.type == AssetType.MODEL:
                 self._import_model(asset, options)
@@ -262,7 +254,8 @@ class MayaIntegration(HostIntegration):
                 if isinstance(c, CompositeAsset) and c.composite_type == CompositeType.TEXTURE
             ]
         else:
-            material_name = self._guess_material_name_from_texture_composite(composite)
+            material_name = self._guess_material_name_from_texture_composite(
+                composite)
             texture_nodes = [composite]
 
         texture_paths: dict[str, Path] = {}
@@ -272,7 +265,8 @@ class MayaIntegration(HostIntegration):
         for child in texture_nodes:
             role: str | None = None
             if isinstance(child.metadata, dict):
-                role_any = child.metadata.get("role") or child.metadata.get("map_type")
+                role_any = child.metadata.get(
+                    "role") or child.metadata.get("map_type")
                 if isinstance(role_any, str) and role_any:
                     role = role_any
             if not role:
@@ -303,7 +297,8 @@ class MayaIntegration(HostIntegration):
             )
 
         optional = strategy.get_optional_texture_maps()
-        missing_optional = sorted({k for k in optional if k not in texture_paths})
+        missing_optional = sorted(
+            {k for k in optional if k not in texture_paths})
         if missing_optional:
             logger.info(
                 f"Missing optional textures for {material_name}: {', '.join(missing_optional)}"
@@ -330,7 +325,8 @@ class MayaIntegration(HostIntegration):
     def _import_hdri_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
         """Import an HDRI composite as an environment light."""
         if composite.composite_type != CompositeType.HDRI:
-            raise ValueError(f"Expected HDRI composite, got: {composite.composite_type}")
+            raise ValueError(
+                f"Expected HDRI composite, got: {composite.composite_type}")
 
         renderer = options.get("renderer") or self.get_active_renderer()
         strategy = self._get_strategy(renderer)
@@ -354,7 +350,8 @@ class MayaIntegration(HostIntegration):
             composite_type=composite.composite_type,
             thumbnail_url=composite.thumbnail_url,
             thumbnail_path=composite.thumbnail_path,
-            metadata=composite.metadata.copy() if isinstance(composite.metadata, dict) else {},
+            metadata=composite.metadata.copy() if isinstance(
+                composite.metadata, dict) else {},
             children=[selected],
         )
 
@@ -363,7 +360,8 @@ class MayaIntegration(HostIntegration):
     def _import_model_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
         """Import a MODEL composite as geometry."""
         if composite.composite_type != CompositeType.MODEL:
-            raise ValueError(f"Expected MODEL composite, got: {composite.composite_type}")
+            raise ValueError(
+                f"Expected MODEL composite, got: {composite.composite_type}")
 
         target_resolution = options.get("resolution")
         if not isinstance(target_resolution, str):
@@ -371,7 +369,8 @@ class MayaIntegration(HostIntegration):
 
         selected = self._get_asset_for_resolution(composite, target_resolution)
         if not selected or not selected.local_path:
-            raise ValueError(f"No local model file available for: {composite.name}")
+            raise ValueError(
+                f"No local model file available for: {composite.name}")
 
         std = StandardAsset(
             id=selected.id,
@@ -389,10 +388,11 @@ class MayaIntegration(HostIntegration):
 
     def update_selection(self, asset: StandardAsset) -> None:
         """Selection replacement is intentionally disabled for initial Maya port."""
-        logger.info(f"Maya replace selection not supported (requested: {asset.name})")
+        logger.info(
+            f"Maya replace selection not supported (requested: {asset.name})")
         return None
 
-    # --- Leaf import helpers ---------------------------------------------------------
+    # LEAF IMPORT HELPERS
 
     def _import_hdri_leaf(
         self, asset: StandardAsset, strategy: RenderStrategy, options: dict[str, Any]
@@ -450,7 +450,8 @@ class MayaIntegration(HostIntegration):
 
         # FBX
         if ext == ".fbx":
-            loaded = self._ensure_any_plugin_loaded(self._FBX_PLUGIN_CANDIDATES)
+            loaded = self._ensure_any_plugin_loaded(
+                self._FBX_PLUGIN_CANDIDATES)
             if not loaded:
                 raise ValueError(
                     "FBX import requires the 'fbxmaya' plugin (not available/loaded)."
@@ -466,20 +467,23 @@ class MayaIntegration(HostIntegration):
 
         # Alembic
         if ext == ".abc":
-            loaded = self._ensure_any_plugin_loaded(self._ALEMBIC_PLUGIN_CANDIDATES)
+            loaded = self._ensure_any_plugin_loaded(
+                self._ALEMBIC_PLUGIN_CANDIDATES)
             if not loaded:
                 raise ValueError(
                     "Alembic import requires the 'AbcImport' plugin (not available/loaded)."
                 )
             abc_import = getattr(cmds, "AbcImport", None)
             if not callable(abc_import):
-                raise ValueError("Alembic import command 'AbcImport' is not available.")
+                raise ValueError(
+                    "Alembic import command 'AbcImport' is not available.")
             # Returns None; import happens as a side effect.
             return abc_import(str(path), mode="import")
 
         # USD (MayaUSD)
         if ext in (".usd", ".usda", ".usdc"):
-            loaded = self._ensure_any_plugin_loaded(self._USD_PLUGIN_CANDIDATES)
+            loaded = self._ensure_any_plugin_loaded(
+                self._USD_PLUGIN_CANDIDATES)
             if not loaded:
                 raise ValueError(
                     "USD import requires MayaUSD ('mayaUsdPlugin') to be installed."
@@ -512,14 +516,16 @@ class MayaIntegration(HostIntegration):
             prompt=False,
         )
 
-    # --- Legacy StandardAsset helpers (ported from Houdini integration) --------------
+    # LEGACY STANDARDASSET HELPERS
 
     def _find_geometry_file(self, asset: StandardAsset) -> str | None:
         if not asset.local_path:
             return None
 
-        files_any = asset.metadata.get("files", {}) if isinstance(asset.metadata, dict) else {}
-        files: dict[str, str] = files_any if isinstance(files_any, dict) else {}
+        files_any = asset.metadata.get("files", {}) if isinstance(
+            asset.metadata, dict) else {}
+        files: dict[str, str] = files_any if isinstance(
+            files_any, dict) else {}
 
         if "geometry" in files:
             return str(asset.local_path / files["geometry"])
@@ -552,7 +558,8 @@ class MayaIntegration(HostIntegration):
         if asset.local_path.is_file():
             return asset.local_path
 
-        files = asset.metadata.get("files", {}) if isinstance(asset.metadata, dict) else {}
+        files = asset.metadata.get("files", {}) if isinstance(
+            asset.metadata, dict) else {}
         rel = files.get("hdri") if isinstance(files, dict) else None
         if isinstance(rel, str) and rel:
             candidate = asset.local_path / rel
@@ -571,8 +578,10 @@ class MayaIntegration(HostIntegration):
             raise ValueError(f"Asset {asset.name} has no local path")
 
         root = asset.local_path if asset.local_path.is_dir() else asset.local_path.parent
-        files_any = asset.metadata.get("files", {}) if isinstance(asset.metadata, dict) else {}
-        files: dict[str, str] = files_any if isinstance(files_any, dict) else {}
+        files_any = asset.metadata.get("files", {}) if isinstance(
+            asset.metadata, dict) else {}
+        files: dict[str, str] = files_any if isinstance(
+            files_any, dict) else {}
 
         textures: dict[str, Path] = {}
         for key, rel in files.items():
@@ -587,7 +596,8 @@ class MayaIntegration(HostIntegration):
             if asset.local_path and asset.local_path.is_file():
                 textures["diffuse"] = asset.local_path
             else:
-                raise ValueError(f"No texture maps found for asset: {asset.name}")
+                raise ValueError(
+                    f"No texture maps found for asset: {asset.name}")
 
         return textures
 
@@ -649,4 +659,3 @@ class MayaIntegration(HostIntegration):
                 return max(exact, key=self._resolution_key)
 
         return max(local_assets, key=self._resolution_key)
-

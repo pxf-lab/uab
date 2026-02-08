@@ -10,6 +10,7 @@ from typing import Any
 
 from uab.core.interfaces import RenderStrategy
 from uab.core.models import Asset, AssetStatus, CompositeAsset, CompositeType
+from uab.integrations.maya._maya import require_cmds
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +78,7 @@ class SharedMayaRenderStrategyUtils(RenderStrategy):
         raise NotImplementedError
 
     def _maya_cmds(self):
-        import maya.cmds as cmds  # type: ignore
-
-        return cmds
+        return require_cmds()
 
     def _resolution_key(self, asset: Asset) -> int:
         if not isinstance(asset.metadata, dict):
