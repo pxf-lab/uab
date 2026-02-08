@@ -7,7 +7,7 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 | Houdini | Redshift | In progress
 | Blender | Cycles | Planned
 | Unreal Engine 5 | Unreal Engine Renderer | Planned
-| Maya | Arnold | Planned
+| Maya | Arnold | In progress
 
 | Asset Library | Status |
 | - | - |
@@ -31,7 +31,10 @@ If there's a DCC, renderer, or library you think should be integrated but cannot
 > [!WARNING]
 > This application is only tested on MacOS. It may work on Windows and Linux (I've done my best to consider OS-specific decisions), but no guarantees.
 
-Check out the `examples` directory for my current Houdini config.
+Check out the `examples` directory for working host configs (Houdini, Maya).
+
+> [!NOTE]
+> This application is built for Python 3.11, as that is the current VFX standard at the time of development.
 
 ## Desktop:
 1. Clone the repo and navigate to its root.
@@ -42,7 +45,7 @@ Check out the `examples` directory for my current Houdini config.
     uv run main.py
     ```
 
-##  Houdini 21:
+##  Houdini 21+:
 1. Clone the repo and navigate to its root.
 2. Export the dependencies.
     ```bash
@@ -98,6 +101,25 @@ Check out the `examples` directory for my current Houdini config.
     ```
 8. Move the contents of the earlier `deps` directory to the new `python_panels` directory.
 9. Create a new pane in Houdini and select "Universal Asset Browser".
+
+## Maya 2025+:
+
+1. Clone the repo and navigate to its root.
+2. Add this repo to Maya's Python path.
+   - Recommended: use the Maya module file example in `examples/maya/README.md`.
+   - To install a module, the module file must be in a directory checked by Maya. I recommend the preferences of your current Maya installation, where you can make a new `modules` directory if one does not already exist, and place the file. **Be sure that you swap out the paths in the example module file for actual paths on your system**.
+3. Install dependencies into `mayapy`:
+
+    ```bash
+    "<path/to/mayapy>" -m pip install -r "/path/to/uab-refactor/src/uab/requirements.txt"
+    ```
+
+4. Start Maya, open the Script Editor (Python tab), and run:
+
+    ```python
+    import uab_maya
+    uab_maya.show()
+    ```
 
 # Key Architectural Concepts
 
