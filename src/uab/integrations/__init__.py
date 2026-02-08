@@ -5,7 +5,8 @@ This package contains integrations for different DCC applications
 
 Available Integrations:
     - StandaloneIntegration: Mock integration for development/testing
-    - HoudiniIntegration: Full Houdini integration with renderer support
+    - HoudiniIntegration: Houdini 21+
+    - MayaIntegration: Maya 2025+
 
 Usage:
     # Standalone (development)
@@ -15,18 +16,23 @@ Usage:
     # Houdini
     from uab.integrations import HoudiniIntegration
     integration = HoudiniIntegration()
+
+    # Maya
+    from uab.integrations import MayaIntegration
+    integration = MayaIntegration()
 """
 
 from uab.integrations.standalone import StandaloneIntegration
 
-# Houdini integration is imported lazily to avoid hou import errors
-# when running outside of Houdini
-__all__ = ["StandaloneIntegration", "HoudiniIntegration"]
+__all__ = ["StandaloneIntegration", "HoudiniIntegration", "MayaIntegration"]
 
 
 def __getattr__(name: str):
-    """Lazy import for Houdini integration to avoid import errors outside Houdini."""
+    """Lazy imports for DCC integrations to avoid import errors outside hosts."""
     if name == "HoudiniIntegration":
         from uab.integrations.houdini import HoudiniIntegration
         return HoudiniIntegration
+    if name == "MayaIntegration":
+        from uab.integrations.maya import MayaIntegration
+        return MayaIntegration
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
