@@ -10,6 +10,7 @@ from typing import Any
 from pathlib import Path
 
 from uab.core.models import CompositeAsset, CompositeType, StandardAsset
+from uab.integrations.houdini._hou import require_hou
 from uab.integrations.houdini.strategies.base import SharedHoudiniRenderStrategyUtils
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         Raises:
             ValueError: If no local HDRI file is available
         """
-        import hou
+        hou = require_hou()
 
         if composite.composite_type != CompositeType.HDRI:
             raise ValueError(
@@ -130,7 +131,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         Raises:
             ValueError: If no node specified or HDRI path not found
         """
-        import hou
+        hou = require_hou()
 
         self._log_import(asset, "Updating environment light")
 
@@ -185,7 +186,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
         Raises:
             ValueError: If no texture maps found
         """
-        import hou
+        hou = require_hou()
 
         normalized = self._normalize_texture_keys(textures)
         if not normalized:
@@ -301,7 +302,7 @@ class KarmaStrategy(SharedHoudiniRenderStrategyUtils):
             asset: The texture asset
             options: Must contain "node" key with target material node
         """
-        import hou
+        hou = require_hou()
 
         self._log_import(asset, "Updating material")
 

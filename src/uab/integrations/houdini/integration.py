@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+from uab.integrations.houdini._hou import has_hou, require_hou
+
 from uab.core.interfaces import HostIntegration, RenderStrategy
 from uab.core.models import (
     Asset,
@@ -79,9 +81,11 @@ class HoudiniIntegration(HostIntegration):
         Returns:
             List of available renderer identifiers
         """
-        import hou
-
         available = []
+
+        if not has_hou():
+            return available
+        hou = require_hou()
 
         # Check for Arnold (HtoA)
         try:
@@ -120,7 +124,9 @@ class HoudiniIntegration(HostIntegration):
         Returns:
             Renderer identifier (e.g., "arnold", "redshift", "karma")
         """
-        import hou
+        if not has_hou():
+            return "karma"
+        hou = require_hou()
 
         # Check ROPs in /out for renderer hints
         out = hou.node("/out")
@@ -219,7 +225,7 @@ class HoudiniIntegration(HostIntegration):
         Raises:
             ValueError: If asset cannot be imported (missing path, unsupported type)
         """
-        import hou
+        hou = require_hou()
 
         logger.info(f"Importing asset: {asset.name} (type={asset.type.value})")
 
@@ -242,11 +248,10 @@ class HoudiniIntegration(HostIntegration):
         Wraps the operation in an undo group and dispatches based on composite_type.
         """
         # Best-effort undo grouping: only available in Houdini.
-        try:
-            import hou  # type: ignore
-        except Exception:
+        if not has_hou():
             logger.debug("Houdini 'hou' module not available; importing without undo group")
             return super().import_composite(composite, options)
+        hou = require_hou()
 
         logger.info(
             f"Importing composite: {composite.name} (type={composite.composite_type.value})"
@@ -301,8 +306,6 @@ class HoudiniIntegration(HostIntegration):
         self, asset: StandardAsset, renderer: str, options: dict[str, Any]
     ) -> None:
         """Import a texture asset as a material."""
-        import hou
-
         strategy = self._get_strategy(renderer)
         if strategy is None:
             raise ValueError(f"No import strategy for renderer: {renderer}")
@@ -494,7 +497,7 @@ class HoudiniIntegration(HostIntegration):
         self, asset: StandardAsset, options: dict[str, Any]
     ) -> None:
         """Import a 3D model asset."""
-        import hou
+        hou = require_hou()
 
         if not asset.local_path:
             raise ValueError(f"Asset {asset.name} has no local path")
@@ -676,7 +679,7 @@ class HoudiniIntegration(HostIntegration):
 
     def _create_preview_geometry(self, asset: StandardAsset, material: Any) -> None:
         """Create a preview sphere with the material assigned."""
-        import hou
+        hou = require_hou()
 
         obj = hou.node("/obj")
         geo_name = self._sanitize_node_name(f"{asset.name}_preview")
@@ -718,7 +721,7 @@ class HoudiniIntegration(HostIntegration):
         Args:
             asset: The asset to apply to the selection
         """
-        import hou
+        hou = require_hou()
 
         logger.info(f"Updating selection with asset: {asset.name}")
 
