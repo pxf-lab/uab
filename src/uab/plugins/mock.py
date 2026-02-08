@@ -10,11 +10,12 @@ import logging
 from pathlib import Path
 
 from uab.core.interfaces import AssetLibraryPlugin, Browsable
-from uab.core.models import StandardAsset, AssetStatus, AssetType
+from uab.core.models import StandardAsset, AssetStatus, AssetType, deprecated
 
 logger = logging.getLogger(__name__)
 
 
+@deprecated("StandardAsset is deprecated")
 class MockPlugin(AssetLibraryPlugin):
     """
     Mock asset library plugin for development and testing.
@@ -167,9 +168,10 @@ class MockPlugin(AssetLibraryPlugin):
         """Mock plugin supports removal."""
         return True
 
-    def get_settings_schema(self, asset: StandardAsset) -> dict | None:
+    @deprecated("StandardAsset is deprecated")
+    def get_settings_schema(self, item: object) -> dict | None:
         """Return mock settings schema for HDRIs."""
-        if asset.type == AssetType.HDRI:
+        if isinstance(item, StandardAsset) and item.type == AssetType.HDRI:
             return {
                 "resolution": {
                     "type": "choice",
