@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal, Slot, QTimer
+from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -33,6 +34,78 @@ if TYPE_CHECKING:
     from uab.ui.browser import BrowserView
 
 logger = logging.getLogger(__name__)
+
+_QT_ASYNCIO_LOOP: asyncio.AbstractEventLoop | None = None
+_QT_ASYNCIO_TIMER: QTimer | None = None
+
+
+def _ensure_qt_asyncio_loop() -> asyncio.AbstractEventLoop | None:
+    """
+    Ensure an asyncio event loop is being pumped by Qt.
+
+    This avoids blocking the UI thread with `asyncio.run(...)` in embedded hosts
+    like Maya/Houdini/standalone Qt apps.
+
+    Returns:
+        The managed event loop, or None if Qt isn't running.
+    """
+    # TODO: come back to this, I am reallys ure that there's a better solution
+    global _QT_ASYNCIO_LOOP, _QT_ASYNCIO_TIMER
+
+    # don't treat mocks as a real running Qt environment
+    if not (isinstance(QApplication, type) and isinstance(QTimer, type)):
+        return None
+
+    app = QApplication.instance()
+    if app is None:
+        return None
+
+    if _QT_ASYNCIO_LOOP is not None and not _QT_ASYNCIO_LOOP.is_closed():
+        return _QT_ASYNCIO_LOOP
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    timer = QTimer()
+    timer.setInterval(10)  # ms; small slices to keep UI responsive
+
+    def _step() -> None:
+        if loop.is_closed():
+            timer.stop()
+            return
+        try:
+            # Prevent the loop from blocking the UI thread.
+            loop.call_soon(loop.stop)
+            loop.run_forever()
+        except Exception as e:
+            logger.debug(f"Asyncio Qt pump failed: {e}")
+            timer.stop()
+
+    timer.timeout.connect(_step)
+    timer.start()
+
+    def _shutdown() -> None:
+        try:
+            timer.stop()
+        except Exception:
+            pass
+        try:
+            loop.stop()
+        except Exception:
+            pass
+        try:
+            loop.close()
+        except Exception:
+            pass
+
+    try:
+        app.aboutToQuit.connect(_shutdown)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    _QT_ASYNCIO_LOOP = loop
+    _QT_ASYNCIO_TIMER = timer
+    return loop
 
 
 def get_thumbnail_cache_path(item: Any, plugin_id: str) -> "Path":
@@ -283,6 +356,16 @@ class TabPresenter(QObject):
             loop = asyncio.get_running_loop()
             return loop.create_task(coro)
         except RuntimeError:
+            # TODO: is this really the best way to do this
+            if isinstance(QWidget, type) and isinstance(self._view, QWidget):
+                qt_loop = _ensure_qt_asyncio_loop()
+                if qt_loop is not None:
+                    try:
+                        return qt_loop.create_task(coro)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to schedule async task on Qt loop: {e}")
+
             try:
                 asyncio.run(self._run_with_cleanup(coro))
                 return None
