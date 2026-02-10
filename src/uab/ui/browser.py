@@ -156,6 +156,16 @@ class DetailView(QWidget):
         content_layout.addLayout(source_section["layout"])
         content_layout.addWidget(self._create_separator())
 
+        author_section = self._create_field_section("Author")
+        self._author_label = author_section["value"]
+        content_layout.addLayout(author_section["layout"])
+        content_layout.addWidget(self._create_separator())
+
+        license_section = self._create_field_section("License")
+        self._license_label = license_section["value"]
+        content_layout.addLayout(license_section["layout"])
+        content_layout.addWidget(self._create_separator())
+
         path_section = self._create_field_section("File Path")
         self._path_label = path_section["value"]
         self._path_label.setObjectName("detailPathLabel")
@@ -193,6 +203,21 @@ class DetailView(QWidget):
         self._warnings.setProperty("class", "fieldValue")
         self._warnings.setVisible(False)
         composite_layout.addWidget(self._warnings)
+
+        composite_source_section = self._create_field_section("Source")
+        self._composite_source_label = composite_source_section["value"]
+        composite_layout.addLayout(composite_source_section["layout"])
+        composite_layout.addWidget(self._create_separator())
+
+        composite_author_section = self._create_field_section("Author")
+        self._composite_author_label = composite_author_section["value"]
+        composite_layout.addLayout(composite_author_section["layout"])
+        composite_layout.addWidget(self._create_separator())
+
+        composite_license_section = self._create_field_section("License")
+        self._composite_license_label = composite_license_section["value"]
+        composite_layout.addLayout(composite_license_section["layout"])
+        composite_layout.addWidget(self._create_separator())
 
         self._tree = CompositeTreeView()
         self._tree.setObjectName("compositeTreeView")
@@ -267,6 +292,40 @@ class DetailView(QWidget):
         if self._current_item is not None:
             self.show_item(self._current_item)
 
+    def _get_metadata_dict(self, item: object) -> dict[str, Any]:
+        """Safely read `item.metadata` as a dict."""
+        meta = getattr(item, "metadata", None)
+        return meta if isinstance(meta, dict) else {}
+
+    def _format_author(self, meta: dict[str, Any]) -> str:
+        """Format author display from flexible metadata payload."""
+        author_any = meta.get("author")
+        if isinstance(author_any, str) and author_any.strip():
+            return author_any.strip()
+
+        authors_any = meta.get("authors")
+        if isinstance(authors_any, str) and authors_any.strip():
+            return authors_any.strip()
+
+        if isinstance(authors_any, dict):
+            names = sorted(
+                str(k).strip() for k in authors_any.keys() if str(k).strip()
+            )
+            return ", ".join(names) if names else "Unknown"
+
+        if isinstance(authors_any, list):
+            names = [a.strip() for a in authors_any if isinstance(a, str) and a.strip()]
+            return ", ".join(names) if names else "Unknown"
+
+        return "Unknown"
+
+    def _format_license(self, meta: dict[str, Any]) -> str:
+        """Format license display from flexible metadata payload."""
+        license_any = meta.get("license")
+        if isinstance(license_any, str) and license_any.strip():
+            return license_any.strip()
+        return "No license found"
+
     def show_item(self, item: Browsable) -> None:
         """
         Display the full details for an item (asset or composite).
@@ -291,6 +350,11 @@ class DetailView(QWidget):
             warnings = self._get_composite_warnings(item)
             self._warnings.setText("\n".join(warnings))
             self._warnings.setVisible(bool(warnings))
+
+            self._composite_source_label.setText(item.source)
+            meta = self._get_metadata_dict(item)
+            self._composite_author_label.setText(self._format_author(meta))
+            self._composite_license_label.setText(self._format_license(meta))
 
             self._tree_model.set_root(item)
             self._tree.expandToDepth(0)
@@ -319,6 +383,9 @@ class DetailView(QWidget):
                 status.value.upper() if isinstance(status, AssetStatus) else "UNKNOWN"
             )
             self._source_label.setText(item.source)
+            meta = self._get_metadata_dict(item)
+            self._author_label.setText(self._format_author(meta))
+            self._license_label.setText(self._format_license(meta))
 
             local_path = getattr(item, "local_path", None)
             if local_path:

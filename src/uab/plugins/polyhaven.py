@@ -136,6 +136,7 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                     thumbnail_path=None,
                     metadata={
                         "asset_type": asset_type.value,
+                        "license": "CC0",
                         "categories": info.get("categories", []),
                         "tags": info.get("tags", []),
                         "authors": info.get("authors", {}),
