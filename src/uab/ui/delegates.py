@@ -183,6 +183,9 @@ class AssetDelegate(QStyledItemDelegate):
 
     COLORS = AssetColor
 
+    # chosen experimentally
+    MIN_CELL_SIZE_FOR_OVERLAYS = 100
+
     # Delay before showing the large preview (milliseconds)
     HOVER_PREVIEW_DELAY_MS = 1000
 
@@ -405,11 +408,9 @@ class AssetDelegate(QStyledItemDelegate):
         # Draw thumbnail
         self._paint_thumbnail(painter, thumb_rect, item)
 
-        # Draw status overlay
-        self._paint_status_overlay(painter, thumb_rect, item)
-
-        # Draw type badge
-        self._paint_type_badge(painter, thumb_rect, item)
+        if self._cell_size >= self.MIN_CELL_SIZE_FOR_OVERLAYS:
+            self._paint_status_overlay(painter, thumb_rect, item)
+            self._paint_type_badge(painter, thumb_rect, item)
 
         # Draw asset name
         text_rect = QRect(
