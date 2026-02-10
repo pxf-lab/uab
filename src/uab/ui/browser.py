@@ -63,7 +63,8 @@ class DetailView(QWidget):
     back_clicked = Signal()
     import_clicked = Signal(str)  # item_id
     download_asset_clicked = Signal(str)  # asset_id
-    download_composite_clicked = Signal(str, object)  # composite_id, resolution(str|None)
+    # composite_id, resolution(str|None)
+    download_composite_clicked = Signal(str, object)
     tree_item_expanded = Signal(str)  # item_id
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -128,7 +129,8 @@ class DetailView(QWidget):
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -225,7 +227,8 @@ class DetailView(QWidget):
         self._tree_delegate = TreeItemDelegate(self._tree)
         self._tree.setItemDelegate(self._tree_delegate)
 
-        self._tree_delegate.download_clicked.connect(self.download_asset_clicked.emit)
+        self._tree_delegate.download_clicked.connect(
+            self.download_asset_clicked.emit)
         self._tree.item_expanded.connect(self.tree_item_expanded.emit)
 
         composite_layout.addWidget(self._tree, 1)
@@ -288,6 +291,7 @@ class DetailView(QWidget):
     def set_download_enabled(self, enabled: bool) -> None:
         """Enable or disable download capability."""
         self._download_enabled = enabled
+        self._tree_delegate.set_download_enabled(enabled)
         # refresh button visibility for current item
         if self._current_item is not None:
             self.show_item(self._current_item)
@@ -314,7 +318,8 @@ class DetailView(QWidget):
             return ", ".join(names) if names else "Unknown"
 
         if isinstance(authors_any, list):
-            names = [a.strip() for a in authors_any if isinstance(a, str) and a.strip()]
+            names = [a.strip()
+                     for a in authors_any if isinstance(a, str) and a.strip()]
             return ", ".join(names) if names else "Unknown"
 
         return "Unknown"
@@ -360,10 +365,12 @@ class DetailView(QWidget):
             self._tree.expandToDepth(0)
 
             self._download_btn.setVisible(
-                self._download_enabled and getattr(item, "has_cloud_children", False)
+                self._download_enabled and getattr(
+                    item, "has_cloud_children", False)
             )
             # gray out import if nothing is local
-            self._import_btn.setEnabled(getattr(item, "has_local_children", False))
+            self._import_btn.setEnabled(
+                getattr(item, "has_local_children", False))
 
         else:
             self._detail_stack.setCurrentIndex(0)
@@ -488,7 +495,8 @@ class DetailView(QWidget):
         if isinstance(self._current_item, CompositeAsset):
             resolution_text = self._resolution_combo.currentText()
             resolution: str | None = None if resolution_text == "All" else resolution_text
-            self.download_composite_clicked.emit(self._current_item.id, resolution)
+            self.download_composite_clicked.emit(
+                self._current_item.id, resolution)
         else:
             self.download_asset_clicked.emit(self._current_item.id)
 
@@ -556,7 +564,8 @@ class BrowserView(QWidget):
     download_requested = Signal(str)  # item_id
     # separate download signals for assets vs composites
     download_asset_requested = Signal(str)  # asset_id
-    download_composite_requested = Signal(str, object)  # composite_id, resolution(str|None)
+    # composite_id, resolution(str|None)
+    download_composite_requested = Signal(str, object)
     tree_item_expanded = Signal(str)  # item_id
     remove_requested = Signal(str)  # item_id
     add_files_requested = Signal()  # request to add individual files
@@ -642,7 +651,8 @@ class BrowserView(QWidget):
         self._detail_view.download_composite_clicked.connect(
             self.download_composite_requested.emit
         )
-        self._detail_view.tree_item_expanded.connect(self.tree_item_expanded.emit)
+        self._detail_view.tree_item_expanded.connect(
+            self.tree_item_expanded.emit)
         self._stack.addWidget(self._detail_view)
 
         main_layout.addWidget(self._stack)
@@ -947,12 +957,15 @@ class BrowserView(QWidget):
             if self._download_enabled and getattr(item, "has_cloud_children", False):
                 download_action = menu.addAction("Download All")
                 download_action.triggered.connect(
-                    lambda: self.download_composite_requested.emit(item.id, None)
+                    lambda: self.download_composite_requested.emit(
+                        item.id, None)
                 )
 
             import_action = menu.addAction("Import")
-            import_action.setEnabled(getattr(item, "has_local_children", False))
-            import_action.triggered.connect(lambda: self.import_requested.emit(item.id))
+            import_action.setEnabled(
+                getattr(item, "has_local_children", False))
+            import_action.triggered.connect(
+                lambda: self.import_requested.emit(item.id))
 
             menu.addSeparator()
             details_action = menu.addAction("View Details")

@@ -255,6 +255,17 @@ class TreeItemDelegate(QStyledItemDelegate):
     _COLOR_STATUS_DOWNLOADING = QColor("#4a9eff")
     _COLOR_STATUS_MIXED = QColor("#ffd966")
 
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._download_enabled = True
+
+    def set_download_enabled(self, enabled: bool) -> None:
+        """Enable/disable per-leaf download actions in the tree."""
+        self._download_enabled = enabled
+        view = self.parent()
+        if isinstance(view, QTreeView):
+            view.viewport().update()
+
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:  # noqa: N802
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -301,7 +312,8 @@ class TreeItemDelegate(QStyledItemDelegate):
 
         # Download button area (right)
         show_download = (
-            not is_composite
+            self._download_enabled
+            and not is_composite
             and status == AssetStatus.CLOUD
             and isinstance(item, (Asset, StandardAsset))
         )
@@ -428,7 +440,8 @@ class TreeItemDelegate(QStyledItemDelegate):
         status = status if isinstance(status, AssetStatus) else AssetStatus.CLOUD
 
         show_download = (
-            not is_composite
+            self._download_enabled
+            and not is_composite
             and status == AssetStatus.CLOUD
             and isinstance(item, (Asset, StandardAsset))
         )

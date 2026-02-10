@@ -918,10 +918,14 @@ class TestPolyHavenPluginCompositeTree:
         assert local_hdri.source == "polyhaven"
         assert local_hdri.composite_type == CompositeType.HDRI
         assert local_hdri.name == "Sunset HDRI"
-        assert len(local_hdri.children) == 1
-        assert isinstance(local_hdri.children[0], Asset)
-        assert local_hdri.children[0].status == AssetStatus.LOCAL
-        assert local_hdri.children[0].metadata.get("resolution") == "2k"
+        assert len(local_hdri.children) == 2
+        assert all(isinstance(c, Asset) for c in local_hdri.children)
+
+        by_res = {c.metadata.get("resolution"): c for c in local_hdri.children}
+        assert set(by_res.keys()) == {"1k", "2k"}
+        assert by_res["2k"].status == AssetStatus.LOCAL
+        assert by_res["1k"].status == AssetStatus.CLOUD
+        assert local_hdri.is_mixed is True
 
     def test_expand_model_creates_asset_children(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin

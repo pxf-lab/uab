@@ -188,15 +188,19 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
         # heuristics. For other sources (e.g. PolyHaven), prefer surfacing any
         # persisted composite roots from the database so downloaded HDRIs/materials
         # appear as a single CompositeAsset locally.
-        local_source_assets = [a for a in all_local_assets if a.source == self.plugin_id]
-        other_source_assets = [a for a in all_local_assets if a.source != self.plugin_id]
+        local_source_assets = [
+            a for a in all_local_assets if a.source == self.plugin_id]
+        other_source_assets = [
+            a for a in all_local_assets if a.source != self.plugin_id]
 
         grouped_roots: list[Browsable] = []
         grouped_asset_ids: set[str] = set()
         if self.grouping_enabled:
-            grouped_roots, grouped_asset_ids = self._group_assets(local_source_assets)
+            grouped_roots, grouped_asset_ids = self._group_assets(
+                local_source_assets)
 
-        standalone_local_assets = [a for a in local_source_assets if a.id not in grouped_asset_ids]
+        standalone_local_assets = [
+            a for a in local_source_assets if a.id not in grouped_asset_ids]
 
         composite_roots: list[CompositeAsset] = []
         composite_local_asset_ids: set[str] = set()
@@ -209,12 +213,9 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             composite = self._db.get_composite_with_children(cid)
             if not composite:
                 continue
-            pruned = self._prune_composite_to_local(composite)
-            if not pruned:
-                continue
-            propagate_preferred_thumbnail(pruned)
-            composite_roots.append(pruned)
-            for a in pruned.get_all_assets():
+            propagate_preferred_thumbnail(composite)
+            composite_roots.append(composite)
+            for a in composite.get_all_assets():
                 if a.status == AssetStatus.LOCAL:
                     composite_local_asset_ids.add(a.id)
 
@@ -393,7 +394,8 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
                 continue
 
             external_id = str(file_path.resolve())
-            existing = self._db.get_asset_by_external_id(self.plugin_id, external_id)
+            existing = self._db.get_asset_by_external_id(
+                self.plugin_id, external_id)
             existed = existing is not None
 
             asset_type = self._EXTENSION_MAP[suffix]
@@ -449,7 +451,8 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
         # When grouping is enabled, return top-level composites for newly-added grouped
         # items (and standalone Assets for other new files).
         if self.grouping_enabled:
-            grouped_roots, grouped_asset_ids = self._group_assets(processed_assets)
+            grouped_roots, grouped_asset_ids = self._group_assets(
+                processed_assets)
             # Only return roots that contain at least one newly-added asset.
             new_asset_ids = {a.id for a in new_assets}
             for root in grouped_roots:
@@ -533,7 +536,8 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             if not asset.local_path or not isinstance(asset.local_path, Path):
                 continue
 
-            basename, resolution = self._split_basename_and_resolution(asset.local_path.stem)
+            basename, resolution = self._split_basename_and_resolution(
+                asset.local_path.stem)
             fmt = asset.local_path.suffix.lower().lstrip(".")
 
             if isinstance(asset.metadata, dict):
@@ -559,10 +563,12 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
                 children,
                 key=lambda a: (
                     -_resolution_sort_key(
-                        a.metadata.get("resolution") if isinstance(a.metadata, dict) else None
+                        a.metadata.get("resolution") if isinstance(
+                            a.metadata, dict) else None
                     ),
                     format_preference.get(
-                        (a.metadata.get("format") if isinstance(a.metadata, dict) else None) or "", 99
+                        (a.metadata.get("format") if isinstance(
+                            a.metadata, dict) else None) or "", 99
                     ),
                     a.name.lower(),
                 ),
@@ -601,7 +607,8 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             if not asset.local_path or not isinstance(asset.local_path, Path):
                 continue
 
-            basename, resolution = self._split_basename_and_resolution(asset.local_path.stem)
+            basename, resolution = self._split_basename_and_resolution(
+                asset.local_path.stem)
             fmt = asset.local_path.suffix.lower().lstrip(".")
 
             if isinstance(asset.metadata, dict):
@@ -635,10 +642,12 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
                 children,
                 key=lambda a: (
                     -_resolution_sort_key(
-                        a.metadata.get("resolution") if isinstance(a.metadata, dict) else None
+                        a.metadata.get("resolution") if isinstance(
+                            a.metadata, dict) else None
                     ),
                     format_preference.get(
-                        (a.metadata.get("format") if isinstance(a.metadata, dict) else None) or "", 99
+                        (a.metadata.get("format") if isinstance(
+                            a.metadata, dict) else None) or "", 99
                     ),
                     a.name.lower(),
                 ),
@@ -730,7 +739,8 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
                     children,
                     key=lambda a: (
                         -_resolution_sort_key(
-                            a.metadata.get("resolution") if isinstance(a.metadata, dict) else None
+                            a.metadata.get("resolution") if isinstance(
+                                a.metadata, dict) else None
                         ),
                         a.name.lower(),
                     ),
