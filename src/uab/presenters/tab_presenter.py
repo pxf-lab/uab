@@ -883,6 +883,7 @@ class TabPresenter(QObject):
             self._replace_child_in_parent(item.id, item)
             self._refresh_items_in_view()
             self._view.set_download_progress(item.id, 0.0)
+            self._view.notify_item_updated(asset_id, item)
 
             self.status_message.emit(f"Downloading {item.name}...")
 
@@ -903,6 +904,7 @@ class TabPresenter(QObject):
             self._replace_child_in_parent(updated.id, updated)
             self._refresh_items_in_view()
             self._view.set_download_progress(updated.id, 1.0)
+            self._view.notify_item_updated(asset_id, updated)
 
             self.status_message.emit(f"Downloaded {updated.name}")
             logger.info(f"Download complete: {updated.name}")
@@ -923,6 +925,7 @@ class TabPresenter(QObject):
             self._replace_child_in_parent(item.id, item)
             self._refresh_items_in_view()
             self._view.set_download_progress(item.id, -1)
+            self._view.notify_item_updated(asset_id, item)
 
     async def _do_download_composite(self, composite_id: str, resolution: str | None) -> None:
         """Execute a composite download asynchronously."""

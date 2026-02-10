@@ -292,6 +292,51 @@ class DetailView(QWidget):
         if self._current_item is not None:
             self.show_item(self._current_item)
 
+    def _refresh_composite_controls(self) -> None:
+        """Refresh composite-derived UI (warnings + action buttons) in-place."""
+        item = self._current_item
+        if not isinstance(item, CompositeAsset):
+            return
+
+        warnings = self._get_composite_warnings(item)
+        show_warnings = bool(warnings)
+        self._warnings_heading.setVisible(show_warnings)
+        self._warnings.setText("\n".join(warnings))
+        self._warnings.setVisible(show_warnings)
+
+        self._download_btn.setVisible(
+            self._download_enabled and getattr(item, "has_cloud_children", False)
+        )
+        self._import_btn.setEnabled(getattr(item, "has_local_children", False))
+
+    def notify_item_updated(
+        self, item_id: str, updated_item: Browsable | None = None
+    ) -> None:
+        """
+        Notify the detail view that an item was updated (e.g., during download).
+
+        This triggers a redraw of the currently visible detail UI when relevant:
+        - If the current detail item is a leaf asset and IDs match, re-render it.
+        - If the current detail item is a composite, update the tree row (if present)
+          and refresh composite-derived controls (warnings/buttons) without resetting
+          the whole tree.
+        """
+        if self._current_item is None:
+            return
+
+        if isinstance(self._current_item, CompositeAsset):
+            status = None
+            if updated_item is not None:
+                status = getattr(updated_item, "status", updated_item.display_status)
+            if isinstance(status, AssetStatus):
+                self._tree_model.update_item_status(item_id, status)
+            self._refresh_composite_controls()
+            return
+
+        if getattr(self._current_item, "id", None) != item_id:
+            return
+        self.show_item(updated_item or self._current_item)
+
     def _get_metadata_dict(self, item: object) -> dict[str, Any]:
         """Safely read `item.metadata` as a dict."""
         meta = getattr(item, "metadata", None)
@@ -836,6 +881,21 @@ class BrowserView(QWidget):
             if progress >= 1.0:
                 QTimer.singleShot(
                     1000, lambda: self._progress_bar.setVisible(False))
+
+    def notify_item_updated(
+        self, item_id: str, updated_item: Browsable | None = None
+    ) -> None:
+        """Trigger a redraw of the detail view when an item changes."""
+        if not self.is_detail_visible():
+            return
+
+        if updated_item is not None and self._current_detail_item is not None:
+            if getattr(self._current_detail_item, "id", None) == item_id:
+                self._current_detail_item = updated_item
+            elif getattr(self._current_detail_item, "id", None) == getattr(updated_item, "id", None):
+                self._current_detail_item = updated_item
+
+        self._detail_view.notify_item_updated(item_id, updated_item)
 
     def set_renderers(self, renderers: list[str]) -> None:
         """
