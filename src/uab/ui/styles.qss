@@ -331,6 +331,16 @@ BrowserView QListView::item:selected {
     font-size: 11pt;
 }
 
+/* Composite warnings */
+#detailView #warningsBox,
+#detailRightPanel #warningsBox {
+    background-color: #ffd966;
+    color: #1a1a1a;
+    border: 1px solid #d1b24f;
+    border-radius: 6px;
+    padding: 8px;
+}
+
 /* Detail view separators */
 #detailRightPanel QFrame[frameShape="4"] {
     color: #333333;

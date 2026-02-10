@@ -190,7 +190,13 @@ class DetailView(QWidget):
         composite_layout.setContentsMargins(15, 15, 15, 15)
         composite_layout.setSpacing(10)
 
+        self._warnings_heading = QLabel("Warnings")
+        self._warnings_heading.setProperty("class", "fieldLabel")
+        self._warnings_heading.setVisible(False)
+        composite_layout.addWidget(self._warnings_heading)
+
         self._warnings = QLabel()
+        self._warnings.setObjectName("warningsBox")
         self._warnings.setWordWrap(True)
         self._warnings.setProperty("class", "fieldValue")
         self._warnings.setVisible(False)
@@ -337,8 +343,10 @@ class DetailView(QWidget):
             self._download_btn.setText("Download All")
 
             warnings = self._get_composite_warnings(item)
+            show_warnings = bool(warnings)
+            self._warnings_heading.setVisible(show_warnings)
             self._warnings.setText("\n".join(warnings))
-            self._warnings.setVisible(bool(warnings))
+            self._warnings.setVisible(show_warnings)
 
             self._composite_source_label.setText(item.source)
             meta = self._get_metadata_dict(item)
