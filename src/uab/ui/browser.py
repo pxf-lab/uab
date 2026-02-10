@@ -190,16 +190,6 @@ class DetailView(QWidget):
         composite_layout.setContentsMargins(15, 15, 15, 15)
         composite_layout.setSpacing(10)
 
-        self._composite_title = QLabel()
-        self._composite_title.setObjectName("detailNameLabel")
-        self._composite_title.setWordWrap(True)
-        composite_layout.addWidget(self._composite_title)
-
-        self._composite_status = QLabel()
-        self._composite_status.setProperty("class", "fieldValue")
-        self._composite_status.setWordWrap(True)
-        composite_layout.addWidget(self._composite_status)
-
         self._warnings = QLabel()
         self._warnings.setWordWrap(True)
         self._warnings.setProperty("class", "fieldValue")
@@ -345,12 +335,6 @@ class DetailView(QWidget):
             self._detail_stack.setCurrentIndex(1)
             self._resolution_combo.setVisible(True)
             self._download_btn.setText("Download All")
-
-            self._composite_title.setText(item.name)
-            status_text = item.display_status.value.upper()
-            if item.is_mixed:
-                status_text = "MIXED"
-            self._composite_status.setText(f"Status: {status_text}")
 
             warnings = self._get_composite_warnings(item)
             self._warnings.setText("\n".join(warnings))
@@ -532,8 +516,6 @@ class DetailView(QWidget):
             warnings.append("This composite has no loaded children yet.")
             return warnings
 
-        if composite.has_cloud_children:
-            warnings.append("Some items are still in the cloud.")
         if not composite.has_local_children:
             warnings.append("Nothing is downloaded yet. Import is disabled.")
         return warnings
