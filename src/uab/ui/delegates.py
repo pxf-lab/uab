@@ -12,7 +12,6 @@ from PySide6.QtGui import (
     QColor,
     QPen,
     QBrush,
-    QFont,
     QPainterPath,
     QFontMetrics,
 )
