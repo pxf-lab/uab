@@ -32,9 +32,9 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 
 If there's a DCC, renderer, or library you think should be integrated but cannot integrate yourself, or you have a feature request or want to get in touch for another reason, please reach out to me@bencres.dev.
 
-## Demo
+## Demo - UAB Running in Maya, Houdini, and Standalone
 
-![Short video demo of the Universal Asset Browser](https://github.com/pxf-lab/uab-assets/blob/main/uab_jan2025_demo.gif)
+https://github.com/user-attachments/assets/d6ed07bd-9564-4608-9fb8-1d3c5a9cd1fa
 
 # Installation
 
