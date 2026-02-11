@@ -23,6 +23,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _describe_error(e: BaseException) -> str:
+    """
+    Return a stable, non-empty error description for logs/messages.
+
+    Some exceptions (notably `asyncio.TimeoutError`) stringify to an empty string.
+    """
+    msg = str(e)
+    if msg:
+        return f"{type(e).__name__}: {msg}"
+    return f"{type(e).__name__}: {e!r}"
+
+
 class SharedAssetLibraryUtils(AssetLibraryPlugin):
     """
     Base class providing shared functionality for asset library plugins.
@@ -115,6 +127,7 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                 timeout=timeout,
                 connector=connector,
                 headers={"User-Agent": "UAB/1.0"},
+                trust_env=True,
             )
             self._session_loop = current_loop
 
@@ -186,18 +199,38 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                 async with session.get(url) as response:
                     response.raise_for_status()
                     return await response.json()
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except asyncio.CancelledError:
+                raise
+            except (aiohttp.ClientError, asyncio.TimeoutError, NotImplementedError) as e:
                 last_error = e
+                # Some embedded hosts provide an event loop that can't do network IO;
+                # retrying won't help, so fall back immediately.
+                if isinstance(e, NotImplementedError):
+                    break
                 if attempt < retries - 1:
                     wait_time = backoff_factor * (2**attempt)
                     logger.warning(
                         f"Request to {url} failed (attempt {attempt + 1}/{retries}), "
-                        f"retrying in {wait_time}s: {e}"
+                        f"retrying in {wait_time}s: {_describe_error(e)}"
                     )
                     await asyncio.sleep(wait_time)
 
-        logger.error(f"All {retries} attempts to {url} failed")
-        raise last_error or aiohttp.ClientError(f"Failed to fetch {url}")
+        base_err: Exception = last_error or aiohttp.ClientError(
+            f"Failed to fetch {url}"
+        )
+        logger.error(
+            f"All {retries} attempts to {url} failed: {_describe_error(base_err)}"
+        )
+
+        # Houdini and other embedded Python hosts can have aiohttp/SSL/proxy quirks.
+        # As a last resort, fall back to stdlib urllib in a worker thread.
+        try:
+            return await asyncio.to_thread(self._fetch_json_sync, url)
+        except Exception as fallback_err:
+            raise aiohttp.ClientError(
+                f"Failed to fetch {url}: {_describe_error(base_err)} "
+                f"(urllib fallback also failed: {_describe_error(fallback_err)})"
+            ) from fallback_err
 
     async def _download_file(
         self,
@@ -209,6 +242,8 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
     ) -> Path:
         """
         Download a file from URL to local path with retry logic.
+
+        This is necessary becasue some embedded hosts (HOUDINI, LOOKING AT YOU) have aiohttp/SSL/proxy quirks.
 
         Args:
             url: The URL to download from
@@ -254,18 +289,124 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                             temp_path.unlink()
                         raise
 
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            except asyncio.CancelledError:
+                raise
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError, NotImplementedError) as e:
                 last_error = e
+                # If the loop can't perform this operation, retrying won't help.
+                if isinstance(e, NotImplementedError):
+                    break
                 if attempt < retries - 1:
                     wait_time = backoff_factor * (2**attempt)
                     logger.warning(
                         f"Download from {url} failed (attempt {attempt + 1}/{retries}), "
-                        f"retrying in {wait_time}s: {e}"
+                        f"retrying in {wait_time}s: {_describe_error(e)}"
                     )
                     await asyncio.sleep(wait_time)
 
-        logger.error(f"All {retries} download attempts from {url} failed")
-        raise last_error or aiohttp.ClientError(f"Failed to download {url}")
+        base_err: Exception = last_error or aiohttp.ClientError(
+            f"Failed to download {url}"
+        )
+        logger.error(
+            f"All {retries} download attempts from {url} failed: {_describe_error(base_err)}"
+        )
+
+        # Last resort: stdlib urllib download in a worker thread.
+        try:
+            return await asyncio.to_thread(
+                self._download_file_sync, url, dest_path, progress_callback
+            )
+        except Exception as fallback_err:
+            raise aiohttp.ClientError(
+                f"Failed to download {url}: {_describe_error(base_err)} "
+                f"(urllib fallback also failed: {_describe_error(fallback_err)})"
+            ) from fallback_err
+
+    def _urllib_ssl_context(self):
+        """Best-effort SSL context for stdlib urllib HTTPS."""
+        import ssl
+
+        try:
+            import certifi
+
+            return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            pass
+
+        try:
+            return ssl.create_default_context()
+        except Exception:
+            # Worst case: disable verification (still encrypted).
+            return ssl._create_unverified_context()
+
+    def _fetch_json_sync(self, url: str) -> dict | list:
+        """Synchronous JSON fetch (urllib). Intended for thread offload."""
+        import json
+        import urllib.request
+
+        ctx = self._urllib_ssl_context()
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "UAB/1.0",
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            data = resp.read()
+        value = json.loads(data)
+        if not isinstance(value, (dict, list)):
+            raise TypeError(f"Unexpected JSON type from {url}: {type(value)}")
+        return value
+
+    def _download_file_sync(
+        self,
+        url: str,
+        dest_path: Path,
+        progress_callback: callable | None = None,
+    ) -> Path:
+        """Synchronous file download (urllib). Intended for thread offload."""
+        import urllib.request
+
+        ctx = self._urllib_ssl_context()
+        req = urllib.request.Request(url, headers={"User-Agent": "UAB/1.0"})
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = dest_path.with_suffix(dest_path.suffix + ".tmp")
+
+        downloaded = 0
+        total_size = 0
+
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                # `length` is not guaranteed; fall back to header.
+                length_any = getattr(resp, "length", None)
+                if isinstance(length_any, int):
+                    total_size = length_any
+                else:
+                    header = resp.headers.get("Content-Length")
+                    if header and header.isdigit():
+                        total_size = int(header)
+
+                with open(temp_path, "wb") as f:
+                    while True:
+                        chunk = resp.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback:
+                            progress_callback(downloaded, total_size)
+
+            temp_path.rename(dest_path)
+            return dest_path
+        except Exception:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            raise
 
     async def download_thumbnail(
         self,

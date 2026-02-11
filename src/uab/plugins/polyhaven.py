@@ -70,6 +70,28 @@ def _safe_lower(value: Any) -> str:
     return str(value).lower() if value is not None else ""
 
 
+def _format_exception_chain(e: BaseException, max_depth: int = 4) -> str:
+    """
+    Format an exception (and its cause/context chain) into a non-empty string.
+
+    This avoids empty log messages from exceptions like `asyncio.TimeoutError`.
+    """
+    parts: list[str] = []
+    cur: BaseException | None = e
+    seen: set[int] = set()
+
+    while cur is not None and id(cur) not in seen and len(parts) < max_depth:
+        seen.add(id(cur))
+        msg = str(cur)
+        if msg:
+            parts.append(f"{type(cur).__name__}: {msg}")
+        else:
+            parts.append(f"{type(cur).__name__}: {cur!r}")
+        cur = cur.__cause__ or cur.__context__
+
+    return " <- ".join(parts)
+
+
 class PolyHavenPlugin(SharedAssetLibraryUtils):
     """Plugin for browsing and downloading PolyHaven assets."""
 
@@ -106,7 +128,9 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
             try:
                 data = await self._fetch_json(url)
             except Exception as e:
-                logger.error(f"Failed to fetch {api_type} from PolyHaven: {e}")
+                logger.error(
+                    f"Failed to fetch {api_type} from PolyHaven ({url}): {_format_exception_chain(e)}"
+                )
                 continue
 
             if not isinstance(data, dict):
