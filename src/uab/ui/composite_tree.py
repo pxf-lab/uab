@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QP
 from PySide6.QtWidgets import QStyle, QStyleOptionViewItem, QStyledItemDelegate, QTreeView
 
 from uab.core.models import Asset, AssetStatus, CompositeAsset, StandardAsset
+from uab.ui.delegates import AssetStatusBadge
 
 
 class TreeDataRole(IntEnum):
@@ -252,11 +253,6 @@ class TreeItemDelegate(QStyledItemDelegate):
     _COLOR_HOVER = QColor("#2d2d2d")
     _COLOR_BORDER = QColor("#333333")
 
-    _COLOR_STATUS_LOCAL = QColor("#44ff44")
-    _COLOR_STATUS_CLOUD = QColor("#888888")
-    _COLOR_STATUS_DOWNLOADING = QColor("#4a9eff")
-    _COLOR_STATUS_MIXED = QColor("#ffd966")
-
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._download_enabled = True
@@ -335,18 +331,9 @@ class TreeItemDelegate(QStyledItemDelegate):
             right_limit = download_rect[0] - 8
 
         # Status icon
-        if is_mixed:
-            status_icon = "⚡"
-            status_color = self._COLOR_STATUS_MIXED
-        elif status == AssetStatus.LOCAL:
-            status_icon = "✓"
-            status_color = self._COLOR_STATUS_LOCAL
-        elif status == AssetStatus.DOWNLOADING:
-            status_icon = "↓"
-            status_color = self._COLOR_STATUS_DOWNLOADING
-        else:
-            status_icon = "☁"
-            status_color = self._COLOR_STATUS_CLOUD
+        badge = AssetStatusBadge.from_status(status, is_mixed=is_mixed)
+        status_icon = badge.icon
+        status_color = badge.qcolor
 
         painter.setPen(status_color)
         font = painter.font()

@@ -151,6 +151,35 @@ class AssetColor(Enum):
         return self.value
 
 
+class AssetStatusBadge(Enum):
+    """Shared status badge UI (icon + color) for delegates."""
+
+    MIXED = ("?", AssetColor.STATUS_MIXED)
+    LOCAL = ("💾", AssetColor.STATUS_LOCAL)
+    CLOUD = ("☁️", AssetColor.STATUS_CLOUD)
+    DOWNLOADING = ("⬇️", AssetColor.STATUS_DOWNLOADING)
+
+    def __init__(self, icon: str, color: AssetColor) -> None:
+        self.icon = icon
+        self._color = color
+
+    @property
+    def qcolor(self) -> QColor:
+        return self._color.qcolor
+
+    @classmethod
+    def from_status(
+        cls, status: AssetStatus, *, is_mixed: bool = False
+    ) -> "AssetStatusBadge":
+        if is_mixed:
+            return cls.MIXED
+        if status == AssetStatus.LOCAL:
+            return cls.LOCAL
+        if status == AssetStatus.DOWNLOADING:
+            return cls.DOWNLOADING
+        return cls.CLOUD
+
+
 def _get_base_asset_type(item: Browsable) -> AssetType | None:
     """
     Map an item (asset or composite) to a primary AssetType for UI badges.
@@ -546,19 +575,9 @@ class AssetDelegate(QStyledItemDelegate):
         status = item.display_status
         is_mixed = isinstance(item, CompositeAsset) and item.is_mixed
 
-        # Draw background circle
-        if is_mixed:
-            color = self.COLORS.STATUS_MIXED.qcolor
-            icon = "⚡"
-        elif status == AssetStatus.LOCAL:
-            color = self.COLORS.STATUS_LOCAL.qcolor
-            icon = "✓"
-        elif status == AssetStatus.CLOUD:
-            color = self.COLORS.STATUS_CLOUD.qcolor
-            icon = "☁"
-        else:  # DOWNLOADING
-            color = self.COLORS.STATUS_DOWNLOADING.qcolor
-            icon = "↓"
+        badge = AssetStatusBadge.from_status(status, is_mixed=is_mixed)
+        color = badge.qcolor
+        icon = badge.icon
 
         # Draw circle background
         painter.setBrush(QBrush(QColor(0, 0, 0, 150)))
