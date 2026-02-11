@@ -148,6 +148,11 @@ class MainPresenter:
         browser_view.set_download_enabled(plugin.can_download)
         browser_view.set_remove_enabled(plugin.can_remove)
 
+        # Local Library tab should not expose host import/renderer UI
+        is_local_library = plugin_id == "local"
+        browser_view.set_host_import_enabled(not is_local_library)
+        browser_view.set_renderer_selector_visible(not is_local_library)
+
         renderers = self._get_available_renderers()
         browser_view.set_renderers(renderers)
 
