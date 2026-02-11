@@ -35,6 +35,24 @@ def _describe_error(e: BaseException) -> str:
     return f"{type(e).__name__}: {e!r}"
 
 
+def format_exception_chain(e: BaseException, max_depth: int = 4) -> str:
+    """
+    Format an exception (and its cause/context chain) into a non-empty string.
+
+    This is useful in embedded hosts where some exceptions stringify to "".
+    """
+    parts: list[str] = []
+    cur: BaseException | None = e
+    seen: set[int] = set()
+
+    while cur is not None and id(cur) not in seen and len(parts) < max_depth:
+        seen.add(id(cur))
+        parts.append(_describe_error(cur))
+        cur = cur.__cause__ or cur.__context__
+
+    return " <- ".join(parts)
+
+
 class SharedAssetLibraryUtils(AssetLibraryPlugin):
     """
     Base class providing shared functionality for asset library plugins.
@@ -78,6 +96,14 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
         # Lazy-initialized HTTP session (tied to an event loop)
         self._session: aiohttp.ClientSession | None = None
         self._session_loop: asyncio.AbstractEventLoop | None = None
+
+        # Some embedded hosts (notably Houdini) may raise NotImplementedError from
+        # the event loop networking primitives that aiohttp relies on. When this
+        # is detected, permanently fall back to urllib for the lifetime of this
+        # plugin instance to avoid noisy retries/log spam.
+        self._http_force_urllib: bool = False
+        self._http_force_urllib_logged: bool = False
+        self._http_force_urllib_reason: str | None = None
 
     @property
     def db(self) -> AssetDatabase:
@@ -191,6 +217,19 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
         Raises:
             aiohttp.ClientError: If all retries fail
         """
+        if self._http_force_urllib:
+            try:
+                return await asyncio.to_thread(self._fetch_json_sync, url)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(
+                    f"Failed to fetch {url} via urllib: {format_exception_chain(e)}"
+                )
+                raise aiohttp.ClientError(
+                    f"Failed to fetch {url}: {format_exception_chain(e)}"
+                ) from e
+
         session = await self._get_session()
         last_error: Exception | None = None
 
@@ -201,12 +240,19 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                     return await response.json()
             except asyncio.CancelledError:
                 raise
-            except (aiohttp.ClientError, asyncio.TimeoutError, NotImplementedError) as e:
+            except NotImplementedError as e:
                 last_error = e
-                # Some embedded hosts provide an event loop that can't do network IO;
-                # retrying won't help, so fall back immediately.
-                if isinstance(e, NotImplementedError):
-                    break
+                self._http_force_urllib = True
+                self._http_force_urllib_reason = type(e).__name__
+                if not self._http_force_urllib_logged:
+                    logger.info(
+                        "aiohttp HTTP backend unavailable (%s); using urllib for HTTP requests.",
+                        self._http_force_urllib_reason,
+                    )
+                    self._http_force_urllib_logged = True
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_error = e
                 if attempt < retries - 1:
                     wait_time = backoff_factor * (2**attempt)
                     logger.warning(
@@ -215,21 +261,30 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                     )
                     await asyncio.sleep(wait_time)
 
-        base_err: Exception = last_error or aiohttp.ClientError(
-            f"Failed to fetch {url}"
-        )
-        logger.error(
-            f"All {retries} attempts to {url} failed: {_describe_error(base_err)}"
-        )
+        base_err: Exception = last_error or aiohttp.ClientError(f"Failed to fetch {url}")
 
-        # Houdini and other embedded Python hosts can have aiohttp/SSL/proxy quirks.
-        # As a last resort, fall back to stdlib urllib in a worker thread.
+        # Fall back to stdlib urllib in a worker thread.
         try:
-            return await asyncio.to_thread(self._fetch_json_sync, url)
+            value = await asyncio.to_thread(self._fetch_json_sync, url)
+            if not isinstance(base_err, NotImplementedError):
+                logger.debug(
+                    "Fetched %s via urllib fallback after aiohttp failure: %s",
+                    url,
+                    format_exception_chain(base_err),
+                )
+            return value
+        except asyncio.CancelledError:
+            raise
         except Exception as fallback_err:
+            logger.error(
+                "Failed to fetch %s via aiohttp (%s) and urllib (%s)",
+                url,
+                format_exception_chain(base_err),
+                format_exception_chain(fallback_err),
+            )
             raise aiohttp.ClientError(
-                f"Failed to fetch {url}: {_describe_error(base_err)} "
-                f"(urllib fallback also failed: {_describe_error(fallback_err)})"
+                f"Failed to fetch {url}: {format_exception_chain(base_err)} "
+                f"(urllib fallback also failed: {format_exception_chain(fallback_err)})"
             ) from fallback_err
 
     async def _download_file(
@@ -258,11 +313,28 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
         Raises:
             aiohttp.ClientError: If all retries fail
         """
-        session = await self._get_session()
-        last_error: Exception | None = None
-
         # Ensure parent directory exists
         dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if self._http_force_urllib:
+            try:
+                return await asyncio.to_thread(
+                    self._download_file_sync, url, dest_path, progress_callback
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(
+                    "Failed to download %s via urllib: %s",
+                    url,
+                    format_exception_chain(e),
+                )
+                raise aiohttp.ClientError(
+                    f"Failed to download {url}: {format_exception_chain(e)}"
+                ) from e
+
+        session = await self._get_session()
+        last_error: Exception | None = None
 
         for attempt in range(retries):
             try:
@@ -291,11 +363,19 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
 
             except asyncio.CancelledError:
                 raise
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError, NotImplementedError) as e:
+            except NotImplementedError as e:
                 last_error = e
-                # If the loop can't perform this operation, retrying won't help.
-                if isinstance(e, NotImplementedError):
-                    break
+                self._http_force_urllib = True
+                self._http_force_urllib_reason = type(e).__name__
+                if not self._http_force_urllib_logged:
+                    logger.info(
+                        "aiohttp HTTP backend unavailable (%s); using urllib for HTTP requests.",
+                        self._http_force_urllib_reason,
+                    )
+                    self._http_force_urllib_logged = True
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                last_error = e
                 if attempt < retries - 1:
                     wait_time = backoff_factor * (2**attempt)
                     logger.warning(
@@ -304,22 +384,32 @@ class SharedAssetLibraryUtils(AssetLibraryPlugin):
                     )
                     await asyncio.sleep(wait_time)
 
-        base_err: Exception = last_error or aiohttp.ClientError(
-            f"Failed to download {url}"
-        )
-        logger.error(
-            f"All {retries} download attempts from {url} failed: {_describe_error(base_err)}"
-        )
+        base_err: Exception = last_error or aiohttp.ClientError(f"Failed to download {url}")
 
         # Last resort: stdlib urllib download in a worker thread.
         try:
-            return await asyncio.to_thread(
+            path = await asyncio.to_thread(
                 self._download_file_sync, url, dest_path, progress_callback
             )
+            if not isinstance(base_err, NotImplementedError):
+                logger.debug(
+                    "Downloaded %s via urllib fallback after aiohttp failure: %s",
+                    url,
+                    format_exception_chain(base_err),
+                )
+            return path
+        except asyncio.CancelledError:
+            raise
         except Exception as fallback_err:
+            logger.error(
+                "Failed to download %s via aiohttp (%s) and urllib (%s)",
+                url,
+                format_exception_chain(base_err),
+                format_exception_chain(fallback_err),
+            )
             raise aiohttp.ClientError(
-                f"Failed to download {url}: {_describe_error(base_err)} "
-                f"(urllib fallback also failed: {_describe_error(fallback_err)})"
+                f"Failed to download {url}: {format_exception_chain(base_err)} "
+                f"(urllib fallback also failed: {format_exception_chain(fallback_err)})"
             ) from fallback_err
 
     def _urllib_ssl_context(self):
