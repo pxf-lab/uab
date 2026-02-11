@@ -4,10 +4,11 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 | DCC  | Renderer | Status |
 | - | - | - |
 | Houdini | Karma | Done
-| Houdini | Redshift | In progress
+| Houdini | Redshift | Experimental
+| Houdini | Arnold | Experimental
+| Maya | Arnold | Experimental
 | Blender | Cycles | Planned
 | Unreal Engine 5 | Unreal Engine Renderer | Planned
-| Maya | Arnold | In progress
 
 | Asset Library | Status |
 | - | - |

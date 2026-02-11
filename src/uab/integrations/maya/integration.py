@@ -32,6 +32,7 @@ class MayaIntegration(HostIntegration):
     _SUPPORTED_RENDERERS = ["arnold", "redshift"]
 
     # Common plugin name candidates (varies by installation)
+    # TODO: need a more robust way to detect the plugins
     _ARNOLD_PLUGIN_CANDIDATES = ("mtoa",)
     _REDSHIFT_PLUGIN_CANDIDATES = (
         "redshift4maya",
@@ -184,7 +185,6 @@ class MayaIntegration(HostIntegration):
 
     @property
     def supports_replace_selection(self) -> bool:
-        # Can be added later; keep disabled for initial Maya port.
         return False
 
     def get_node_label_for_asset_type(self, asset_type: AssetType) -> str:
