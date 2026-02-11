@@ -65,7 +65,8 @@ class MayaIntegration(HostIntegration):
 
     @property
     def uab_supported_renderers(self) -> list[str]:
-        return self._SUPPORTED_RENDERERS.copy()
+        # A renderer is considered supported when it has a registered strategy.
+        return [r for r in self._SUPPORTED_RENDERERS if r in self._strategies]
 
     # MAYA HELPERS
 

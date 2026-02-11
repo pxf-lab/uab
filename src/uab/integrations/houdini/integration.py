@@ -56,21 +56,42 @@ class HoudiniIntegration(HostIntegration):
         self._load_strategies()
 
     def _load_strategies(self) -> None:
-        """Load renderer strategies for available renderers."""
-        from uab.integrations.houdini.strategies.karma import KarmaStrategy
+        """
+        Load renderer strategies (best-effort).
 
-        # Register all known strategies
-        # They'll only be used if the renderer is actually available
-        self._strategies = {
-            "karma": KarmaStrategy(),
-        }
+        A renderer is considered "supported" when it has a registered strategy.
+        Host availability is still checked separately via `get_host_available_renderers()`.
+        """
+        strategies: dict[str, RenderStrategy] = {}
 
+        try:
+            from uab.integrations.houdini.strategies.arnold import ArnoldStrategy
+
+            strategies["arnold"] = ArnoldStrategy()
+        except Exception as e:
+            logger.debug(f"Arnold strategy not available: {e}")
+
+        try:
+            from uab.integrations.houdini.strategies.redshift import RedshiftStrategy
+
+            strategies["redshift"] = RedshiftStrategy()
+        except Exception as e:
+            logger.debug(f"Redshift strategy not available: {e}")
+
+        try:
+            from uab.integrations.houdini.strategies.karma import KarmaStrategy
+
+            strategies["karma"] = KarmaStrategy()
+        except Exception as e:
+            logger.debug(f"Karma strategy not available: {e}")
+
+        self._strategies = strategies
         logger.debug(f"Loaded strategies: {list(self._strategies.keys())}")
 
     @property
     def uab_supported_renderers(self) -> list[str]:
-        """Return the list of renderers that UAB supports."""
-        return self._SUPPORTED_RENDERERS.copy()
+        """Return renderer identifiers that have a registered strategy."""
+        return [r for r in self._SUPPORTED_RENDERERS if r in self._strategies]
 
     def get_host_available_renderers(self) -> list[str]:
         """
