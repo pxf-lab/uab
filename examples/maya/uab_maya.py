@@ -32,7 +32,8 @@ def _get_workspace_qwidget(control_name: str):
     if ptr is None:
         ptr = omui.MQtUtil.findMenuItem(control_name)
     if ptr is None:
-        raise RuntimeError(f"Could not find Qt control for workspaceControl: {control_name}")
+        raise RuntimeError(
+            f"Could not find Qt control for workspaceControl: {control_name}")
 
     return wrapInstance(int(ptr), QtWidgets.QWidget)
 
@@ -105,4 +106,3 @@ def show(*, floating: bool = False) -> Optional[object]:
     )
 
     return build_ui(WORKSPACE_CONTROL)
-
