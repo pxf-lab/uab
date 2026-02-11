@@ -238,12 +238,6 @@ class DetailView(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        self._resolution_combo = QComboBox()
-        self._resolution_combo.setObjectName("resolutionCombo")
-        self._resolution_combo.addItems(["All", "1k", "2k", "4k", "8k"])
-        self._resolution_combo.setVisible(False)
-        btn_layout.addWidget(self._resolution_combo)
-
         self._download_btn = QPushButton("Download")
         self._download_btn.setObjectName("downloadButton")
         self._download_btn.clicked.connect(self._on_download_clicked)
@@ -292,6 +286,10 @@ class DetailView(QWidget):
         if self._current_item is not None:
             self.show_item(self._current_item)
 
+    def set_import_visible(self, visible: bool) -> None:
+        """Show or hide the Import button."""
+        self._import_btn.setVisible(visible)
+
     def _refresh_composite_controls(self) -> None:
         """Refresh composite-derived UI (warnings + action buttons) in-place."""
         item = self._current_item
@@ -305,7 +303,8 @@ class DetailView(QWidget):
         self._warnings.setVisible(show_warnings)
 
         self._download_btn.setVisible(
-            self._download_enabled and getattr(item, "has_cloud_children", False)
+            self._download_enabled and getattr(
+                item, "has_cloud_children", False)
         )
         self._import_btn.setEnabled(getattr(item, "has_local_children", False))
 
@@ -327,7 +326,8 @@ class DetailView(QWidget):
         if isinstance(self._current_item, CompositeAsset):
             status = None
             if updated_item is not None:
-                status = getattr(updated_item, "status", updated_item.display_status)
+                status = getattr(updated_item, "status",
+                                 updated_item.display_status)
             if isinstance(status, AssetStatus):
                 self._tree_model.update_item_status(item_id, status)
             self._refresh_composite_controls()
@@ -384,7 +384,6 @@ class DetailView(QWidget):
 
         if isinstance(item, CompositeAsset):
             self._detail_stack.setCurrentIndex(1)
-            self._resolution_combo.setVisible(True)
             self._download_btn.setText("Download All")
 
             warnings = self._get_composite_warnings(item)
@@ -622,6 +621,7 @@ class BrowserView(QWidget):
         self._scale_factor = 1.0
         self._download_enabled = True
         self._remove_enabled = True
+        self._host_import_enabled = True
         self._items: dict[str, Browsable] = {}  # Cache by item ID (grid only)
         self._current_hover_index: Optional[QModelIndex] = None
         self._current_detail_item: Browsable | None = None
@@ -726,7 +726,7 @@ class BrowserView(QWidget):
         ])
 
         # Renderer combo (populated by presenter)
-        renderer_label = QLabel("Renderer:")
+        self._renderer_label = QLabel("Renderer:")
         self._renderer_combo = QComboBox()
         self._renderer_combo.setMinimumWidth(120)
 
@@ -745,7 +745,7 @@ class BrowserView(QWidget):
         layout.addWidget(self._search_bar, 1)
         layout.addWidget(filter_label)
         layout.addWidget(self._filter_combo)
-        layout.addWidget(renderer_label)
+        layout.addWidget(self._renderer_label)
         layout.addWidget(self._renderer_combo)
         layout.addWidget(self._add_files_btn)
         layout.addWidget(self._add_folder_btn)
@@ -842,6 +842,23 @@ class BrowserView(QWidget):
         """Show or hide the Add Files and Add Folder buttons."""
         self._add_files_btn.setVisible(enabled)
         self._add_folder_btn.setVisible(enabled)
+
+    def set_renderer_selector_visible(self, visible: bool) -> None:
+        """Show or hide the Renderer selector in the toolbar."""
+        self._renderer_label.setVisible(visible)
+        self._renderer_combo.setVisible(visible)
+
+    def set_host_import_enabled(self, enabled: bool) -> None:
+        """
+        Enable/disable host import affordances in the view.
+
+        When disabled, the view hides all import-related UI actions:
+        - context menu Import/New/Replace actions
+        - modifier-click shortcuts (New/Replace)
+        - detail-view Import button
+        """
+        self._host_import_enabled = enabled
+        self._detail_view.set_import_visible(enabled)
 
     def set_host_actions(
         self,
@@ -996,6 +1013,7 @@ class BrowserView(QWidget):
             return
 
         menu = QMenu(self)
+        added_any = False
 
         # Platform-specific hotkey hints
         is_mac = sys.platform == "darwin"
@@ -1010,14 +1028,18 @@ class BrowserView(QWidget):
                     lambda: self.download_composite_requested.emit(
                         item.id, None)
                 )
+                added_any = True
 
-            import_action = menu.addAction("Import")
-            import_action.setEnabled(
-                getattr(item, "has_local_children", False))
-            import_action.triggered.connect(
-                lambda: self.import_requested.emit(item.id))
+            if self._host_import_enabled:
+                import_action = menu.addAction("Import")
+                import_action.setEnabled(
+                    getattr(item, "has_local_children", False))
+                import_action.triggered.connect(
+                    lambda: self.import_requested.emit(item.id))
+                added_any = True
 
-            menu.addSeparator()
+            if added_any:
+                menu.addSeparator()
             details_action = menu.addAction("View Details")
             details_action.triggered.connect(
                 lambda: self.detail_requested.emit(item.id)
@@ -1027,6 +1049,7 @@ class BrowserView(QWidget):
             return
 
         # Leaf asset context menu
+        added_any = False
         status = getattr(item, "status", item.display_status)
         asset_type = getattr(item, "type", None)
         if asset_type is None and hasattr(item, "asset_type"):
@@ -1045,39 +1068,49 @@ class BrowserView(QWidget):
                 download_action.triggered.connect(
                     lambda: self.download_asset_requested.emit(item.id)
                 )
+                added_any = True
 
-            import_action = menu.addAction("Import (will download first)")
-            import_action.triggered.connect(
-                lambda: self.import_requested.emit(item.id)
-            )
+            if self._host_import_enabled:
+                import_action = menu.addAction("Import (will download first)")
+                import_action.triggered.connect(
+                    lambda: self.import_requested.emit(item.id)
+                )
+                added_any = True
 
         elif status == AssetStatus.LOCAL:
             # New <asset> action with hotkey hint
-            new_action = menu.addAction(f"New {node_label}\t{cmd_hint}")
-            new_action.triggered.connect(
-                lambda: self.new_asset_requested.emit(item.id)
-            )
-
-            # Replace <asset> action (only if host supports it)
-            if self._replace_enabled:
-                replace_action = menu.addAction(
-                    f"Replace {node_label}\t{alt_hint}")
-                replace_action.triggered.connect(
-                    lambda: self.replace_asset_requested.emit(item.id)
+            if self._host_import_enabled:
+                new_action = menu.addAction(f"New {node_label}\t{cmd_hint}")
+                new_action.triggered.connect(
+                    lambda: self.new_asset_requested.emit(item.id)
                 )
+                added_any = True
+
+                # Replace <asset> action (only if host supports it)
+                if self._replace_enabled:
+                    replace_action = menu.addAction(
+                        f"Replace {node_label}\t{alt_hint}")
+                    replace_action.triggered.connect(
+                        lambda: self.replace_asset_requested.emit(item.id)
+                    )
+                    added_any = True
 
             if self._remove_enabled:
-                menu.addSeparator()
+                if added_any:
+                    menu.addSeparator()
                 remove_action = menu.addAction("Remove")
                 remove_action.triggered.connect(
                     lambda: self.remove_requested.emit(item.id)
                 )
+                added_any = True
 
         elif status == AssetStatus.DOWNLOADING:
             downloading_action = menu.addAction("Downloading...")
             downloading_action.setEnabled(False)
+            added_any = True
 
-        menu.addSeparator()
+        if added_any:
+            menu.addSeparator()
         details_action = menu.addAction("View Details")
         details_action.triggered.connect(
             lambda: self.detail_requested.emit(item.id)
@@ -1099,6 +1132,9 @@ class BrowserView(QWidget):
         Returns:
             True if the event was handled, False otherwise
         """
+        if not self._host_import_enabled:
+            return False
+
         modifiers = event.modifiers()
         pos = event.pos()
         index = self._grid.indexAt(pos)
