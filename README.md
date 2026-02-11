@@ -1,22 +1,34 @@
 # Universal Asset Browser
 The Universal Asset Browser (UAB) is a Python application that allows you to browse your assets regardless of which 3D application you're using. It is designed to be integrated in any digital content creator (DCC) that has a Python API, to work with any render engine, and to access any external asset library.
 
-| DCC  | Renderer | Status |
-| - | - | - |
-| Houdini | Karma | Done
-| Houdini | Redshift | Experimental
-| Houdini | Arnold | Experimental
-| Maya | Arnold | Experimental
-| Blender | Cycles | Planned
-| Unreal Engine 5 | Unreal Engine Renderer | Planned
+| Houdini | Task Status
+| - | - 
+| **Karma** Environment Light Support | Stable
+| **Karma** MTLX Shader Creation | Stable
+| **Redshift** Environment Light Support | Experimental
+| **Redshift** Shader Creation | Experimental
+| **Arnold** Environment Light Support | Experimental
+| **Arnold** Shader Creation | Experimental
+| Geometry Creation | Planned
+| Geometry Creation with Automatic Shader Assignment | Planned
+
+| Maya | Task Status
+| - | - 
+| **Arnold** Environment Light Support | Stable
+| **Arnold** Shader Creation | Experimental
+| Geometry Creation | Planned
+| Geometry Creation with Automatic Shader Assignment | Planned
+
+> [!NOTE]
+> Support for Unreal Engine and Blender is also planned. They're not QT-based, so are more complicated.
 
 | Asset Library | Status |
 | - | - |
-| Local | Done
-| PolyHaven | Done
-| TurboSquid | Depends on TOS
-| Fab/Megascans | Depends on TOS
-| CGTrader | Depends on TOS
+| Local | Stable
+| PolyHaven | Stable
+| TurboSquid | Planned: depends on TOS
+| Fab/Megascans | Planned: depends on TOS
+| CGTrader | Planned: depends on TOS
 
 If there's a DCC, renderer, or library you think should be integrated but cannot integrate yourself, or you have a feature request or want to get in touch for another reason, please reach out to me at ben@utdallas.edu.
 
