@@ -58,7 +58,8 @@ def _role_label_from_metadata(item: Any) -> str:
         parts.append(map_type)
     if isinstance(fmt, str) and fmt and fmt not in parts:
         parts.append(fmt)
-    if isinstance(resolution, str) and resolution:
+    # dont repeat resolution
+    if isinstance(resolution, str) and resolution and resolution not in parts:
         parts.append(resolution)
 
     return " · ".join(parts)
@@ -107,7 +108,8 @@ class CompositeTreeModel(QAbstractItemModel):
             self._node_by_id[item_id] = node
 
         if isinstance(item, CompositeAsset):
-            node.children = [self._build_node(child, parent=node) for child in item.children]
+            node.children = [self._build_node(
+                child, parent=node) for child in item.children]
         else:
             node.children = []
         return node
@@ -291,10 +293,12 @@ class TreeItemDelegate(QStyledItemDelegate):
 
         name = getattr(item, "name", "")
         status = index.data(int(TreeDataRole.STATUS))
-        status = status if isinstance(status, AssetStatus) else AssetStatus.CLOUD
+        status = status if isinstance(
+            status, AssetStatus) else AssetStatus.CLOUD
 
         is_composite = bool(index.data(int(TreeDataRole.IS_COMPOSITE)))
-        is_mixed = bool(getattr(item, "is_mixed", False)) if is_composite else False
+        is_mixed = bool(getattr(item, "is_mixed", False)
+                        ) if is_composite else False
 
         role_label = index.data(int(TreeDataRole.ROLE_LABEL))
         role_label = role_label if isinstance(role_label, str) else ""
@@ -365,8 +369,26 @@ class TreeItemDelegate(QStyledItemDelegate):
         name_font.setBold(False)
         painter.setFont(name_font)
 
-        name_rect = (x, rect.y(), max(0, right_limit - x), rect.height())
         metrics = QFontMetrics(name_font)
+        name_right_limit = right_limit
+
+        elided_role = ""
+        label_w = 0
+        role_font = None
+        if role_label:
+            role_font = QFont(painter.font())
+            role_font.setPointSize(9)
+            role_font.setItalic(False)
+            label_max_w = min(200, max(0, right_limit - x))
+            label_metrics = QFontMetrics(role_font)
+            elided_role = label_metrics.elidedText(
+                role_label, Qt.TextElideMode.ElideLeft, label_max_w
+            )
+            label_w = min(label_max_w, label_metrics.horizontalAdvance(elided_role))
+            gap = 10
+            name_right_limit = max(x, right_limit - label_w - gap)
+
+        name_rect = (x, rect.y(), max(0, name_right_limit - x), rect.height())
         elided_name = metrics.elidedText(
             str(name), Qt.TextElideMode.ElideRight, name_rect[2]
         )
@@ -380,23 +402,16 @@ class TreeItemDelegate(QStyledItemDelegate):
         )
 
         if role_label:
-            role_font = QFont(painter.font())
-            role_font.setPointSize(9)
-            role_font.setItalic(False)
+            assert role_font is not None
             painter.setFont(role_font)
             painter.setPen(self._COLOR_MUTED)
-            # right-aligned label, constrained to a reasonable max width
-            label_max_w = min(200, max(0, right_limit - x))
-            label_metrics = QFontMetrics(role_font)
-            elided_role = label_metrics.elidedText(
-                role_label, Qt.TextElideMode.ElideLeft, label_max_w
-            )
             painter.drawText(
                 x,
                 rect.y(),
                 max(0, right_limit - x),
                 rect.height(),
-                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+                int(Qt.AlignmentFlag.AlignVCenter |
+                    Qt.AlignmentFlag.AlignRight),
                 elided_role,
             )
 
@@ -437,7 +452,8 @@ class TreeItemDelegate(QStyledItemDelegate):
 
         is_composite = bool(index.data(int(TreeDataRole.IS_COMPOSITE)))
         status = index.data(int(TreeDataRole.STATUS))
-        status = status if isinstance(status, AssetStatus) else AssetStatus.CLOUD
+        status = status if isinstance(
+            status, AssetStatus) else AssetStatus.CLOUD
 
         show_download = (
             self._download_enabled
@@ -466,4 +482,3 @@ class TreeItemDelegate(QStyledItemDelegate):
                 return True
 
         return False
-
