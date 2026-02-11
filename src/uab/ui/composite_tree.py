@@ -66,6 +66,31 @@ def _role_label_from_metadata(item: Any) -> str:
     return " · ".join(parts)
 
 
+def _coerce_asset_status(value: object) -> AssetStatus:
+    """
+    Normalize a status value to `AssetStatus`.
+
+    Note: Qt will coerce `AssetStatus` (a `str`-backed Enum) into a plain `str`
+    when it crosses the model/index boundary, so delegates must be resilient.
+    """
+    if isinstance(value, AssetStatus):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return AssetStatus.CLOUD
+        # Common case: "local" / "cloud" / "downloading"
+        try:
+            return AssetStatus(raw)
+        except ValueError:
+            pass
+        try:
+            return AssetStatus(raw.lower())
+        except ValueError:
+            return AssetStatus.CLOUD
+    return AssetStatus.CLOUD
+
+
 class CompositeTreeModel(QAbstractItemModel):
     """A tree model that represents a CompositeAsset and its descendants."""
 
@@ -288,9 +313,7 @@ class TreeItemDelegate(QStyledItemDelegate):
             return
 
         name = getattr(item, "name", "")
-        status = index.data(int(TreeDataRole.STATUS))
-        status = status if isinstance(
-            status, AssetStatus) else AssetStatus.CLOUD
+        status = _coerce_asset_status(index.data(int(TreeDataRole.STATUS)))
 
         is_composite = bool(index.data(int(TreeDataRole.IS_COMPOSITE)))
         is_mixed = bool(getattr(item, "is_mixed", False)
@@ -439,8 +462,7 @@ class TreeItemDelegate(QStyledItemDelegate):
 
         is_composite = bool(index.data(int(TreeDataRole.IS_COMPOSITE)))
         status = index.data(int(TreeDataRole.STATUS))
-        status = status if isinstance(
-            status, AssetStatus) else AssetStatus.CLOUD
+        status = _coerce_asset_status(status)
 
         show_download = (
             self._download_enabled

@@ -86,6 +86,46 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
         super().__init__(db=db, library_root=library_root)
         self._asset_type_filter = asset_type_filter
 
+    def _resolve_local_status_and_path(
+        self,
+        *,
+        asset_external_id: str,
+        remote_url: str | None,
+    ) -> tuple[AssetStatus, Path | None]:
+        """
+        Resolve leaf asset locality for composite expansion.
+
+        PolyHaven composites are expanded from the API, which always reports files
+        as available in the cloud (of course). If an asset was downloaded previously,
+        expand leaf nodes to reflect LOCAL for the ui.
+        """
+        # prefer DB truth when it points at an existing file
+        try:
+            existing = self._db.get_asset_by_external_id(
+                self.plugin_id, asset_external_id
+            )
+        except Exception:
+            existing = None
+
+        if existing is not None:
+            existing_path = getattr(existing, "local_path", None)
+            if isinstance(existing_path, Path) and existing_path.exists():
+                existing_status = getattr(existing, "status", None)
+                if isinstance(existing_status, AssetStatus):
+                    return existing_status, existing_path
+                return AssetStatus.LOCAL, existing_path
+
+        # fall back to disk check based on the deterministic download path.
+        if remote_url:
+            root_id = asset_external_id.split(":", 1)[0]
+            filename = Path(remote_url.split("?", 1)[0]).name
+            if filename:
+                candidate = self.library_root / root_id / filename
+                if candidate.exists():
+                    return AssetStatus.LOCAL, candidate
+
+        return AssetStatus.CLOUD, None
+
     async def search(self, query: str) -> list[Browsable]:
         """Search PolyHaven assets and return top-level composites."""
         type_specs: list[tuple[AssetType, str, CompositeType]] = [
@@ -270,14 +310,18 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
             filename = Path(remote_url.split("?", 1)[
                             0]).name or asset_external_id
 
+            status, local_path = self._resolve_local_status_and_path(
+                asset_external_id=asset_external_id,
+                remote_url=remote_url,
+            )
             child = Asset(
                 id=_stable_id(self.plugin_id, asset_external_id),
                 source=self.plugin_id,
                 external_id=asset_external_id,
                 name=filename,
                 asset_type=AssetType.TEXTURE,
-                status=AssetStatus.CLOUD,
-                local_path=None,
+                status=status,
+                local_path=local_path,
                 remote_url=remote_url,
                 thumbnail_url=None,
                 thumbnail_path=None,
@@ -343,14 +387,18 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
             asset_external_id = f"{hdri.external_id}:{resolution}:{chosen_fmt}"
             filename = Path(remote_url.split("?", 1)[
                             0]).name or asset_external_id
+            status, local_path = self._resolve_local_status_and_path(
+                asset_external_id=asset_external_id,
+                remote_url=remote_url,
+            )
             child = Asset(
                 id=_stable_id(self.plugin_id, asset_external_id),
                 source=self.plugin_id,
                 external_id=asset_external_id,
                 name=filename,
                 asset_type=AssetType.HDRI,
-                status=AssetStatus.CLOUD,
-                local_path=None,
+                status=status,
+                local_path=local_path,
                 remote_url=remote_url,
                 # propagate to all resolution/format variants
                 thumbnail_url=hdri.thumbnail_url,
@@ -407,6 +455,10 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                 asset_external_id = f"{model.external_id}:{fmt}:{resolution}"
                 filename = Path(remote_url.split("?", 1)[
                                 0]).name or asset_external_id
+                status, local_path = self._resolve_local_status_and_path(
+                    asset_external_id=asset_external_id,
+                    remote_url=remote_url,
+                )
                 children.append(
                     Asset(
                         id=_stable_id(self.plugin_id, asset_external_id),
@@ -414,8 +466,8 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                         external_id=asset_external_id,
                         name=filename,
                         asset_type=AssetType.MODEL,
-                        status=AssetStatus.CLOUD,
-                        local_path=None,
+                        status=status,
+                        local_path=local_path,
                         remote_url=remote_url,
                         # propagate to all resolution/format variants
                         thumbnail_url=model.thumbnail_url,
