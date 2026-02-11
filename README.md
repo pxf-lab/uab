@@ -1,6 +1,12 @@
 # Universal Asset Browser
 The Universal Asset Browser (UAB) is a Python application that allows you to browse your assets regardless of which 3D application you're using. It is designed to be integrated in any digital content creator (DCC) that has a Python API, to work with any render engine, and to access any external asset library.
 
+## Demo - UAB Running in Maya, Houdini, and Standalone
+
+https://github.com/user-attachments/assets/d6ed07bd-9564-4608-9fb8-1d3c5a9cd1fa
+
+## Current Integrations
+
 | Houdini | Status
 | - | - 
 | **Karma** Environment Light Support | Stable
@@ -31,10 +37,6 @@ The Universal Asset Browser (UAB) is a Python application that allows you to bro
 | CGTrader | Planned: depends on TOS
 
 If there's a DCC, renderer, or library you think should be integrated but cannot integrate yourself, or you have a feature request or want to get in touch for another reason, please reach out to me@bencres.dev.
-
-## Demo - UAB Running in Maya, Houdini, and Standalone
-
-https://github.com/user-attachments/assets/d6ed07bd-9564-4608-9fb8-1d3c5a9cd1fa
 
 # Installation
 
