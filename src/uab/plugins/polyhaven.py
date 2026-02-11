@@ -126,6 +126,38 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
 
         return AssetStatus.CLOUD, None
 
+    def _collect_cached_root_status_hints(
+        self,
+    ) -> dict[str, tuple[AssetStatus, bool]]:
+        """
+        Collect status hints for already-downloaded root composites.
+
+        Search results are top-level composites with no children yet, which makes
+        their derived `display_status` look cloud-only. Reusing cached local state
+        from the DB gives the grid overlays enough truth before expansion.
+        """
+        hints: dict[str, tuple[AssetStatus, bool]] = {}
+        try:
+            root_ids = self._db.get_root_composite_ids_with_local_descendants()
+        except Exception:
+            return hints
+
+        for composite_id in root_ids:
+            try:
+                cached = self._db.get_composite_with_children(composite_id)
+            except Exception:
+                continue
+            if not isinstance(cached, CompositeAsset):
+                continue
+            if cached.source != self.plugin_id:
+                continue
+            if not cached.children:
+                continue
+
+            hints[composite_id] = (cached.display_status, cached.is_mixed)
+
+        return hints
+
     async def search(self, query: str) -> list[Browsable]:
         """Search PolyHaven assets and return top-level composites."""
         type_specs: list[tuple[AssetType, str, CompositeType]] = [
@@ -140,6 +172,7 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
 
         q = query.strip().lower()
         results: list[CompositeAsset] = []
+        status_hints = self._collect_cached_root_status_hints()
 
         for asset_type, api_type, composite_type in type_specs:
             url = f"{API_ASSETS}?t={api_type}"
@@ -186,6 +219,12 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                     },
                     children=[],
                 )
+                hint = status_hints.get(composite.id)
+                if hint is not None:
+                    hinted_status, hinted_mixed = hint
+                    setattr(composite, "_ui_display_status_hint", hinted_status)
+                    setattr(composite, "_ui_is_mixed_hint", hinted_mixed)
+
                 composite.thumbnail_path = self.get_thumbnail_cache_path(
                     composite)
                 results.append(composite)

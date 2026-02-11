@@ -179,6 +179,47 @@ class AssetStatusBadge(Enum):
         return cls.CLOUD
 
 
+def _coerce_asset_status(
+    value: object, *, default: AssetStatus = AssetStatus.CLOUD
+) -> AssetStatus:
+    """Normalize loose status values (enum/string) into `AssetStatus`."""
+    if isinstance(value, AssetStatus):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return default
+        try:
+            return AssetStatus(raw)
+        except ValueError:
+            try:
+                return AssetStatus(raw.lower())
+            except ValueError:
+                return default
+    return default
+
+
+def _resolve_status_badge_fields(item: Browsable) -> tuple[AssetStatus, bool]:
+    """
+    Resolve status + mixed badge state for grid overlays.
+
+    PolyHaven search results are lazy composites (no children yet), so they can
+    carry cached status hints populated by the plugin.
+    """
+    status = _coerce_asset_status(getattr(item, "display_status", AssetStatus.CLOUD))
+    is_mixed = bool(isinstance(item, CompositeAsset) and item.is_mixed)
+
+    if isinstance(item, CompositeAsset) and not item.children:
+        hinted_status = getattr(item, "_ui_display_status_hint", None)
+        hinted_mixed = getattr(item, "_ui_is_mixed_hint", None)
+        if hinted_status is not None:
+            status = _coerce_asset_status(hinted_status, default=status)
+        if isinstance(hinted_mixed, bool):
+            is_mixed = hinted_mixed
+
+    return status, is_mixed
+
+
 def _get_base_asset_type(item: Browsable) -> AssetType | None:
     """
     Map an item (asset or composite) to a primary AssetType for UI badges.
@@ -571,8 +612,7 @@ class AssetDelegate(QStyledItemDelegate):
         icon_size = 20
         icon_rect = QRect(rect.x() + 5, rect.y() + 5, icon_size, icon_size)
 
-        status = item.display_status
-        is_mixed = isinstance(item, CompositeAsset) and item.is_mixed
+        status, is_mixed = _resolve_status_badge_fields(item)
 
         badge = AssetStatusBadge.from_status(status, is_mixed=is_mixed)
         color = badge.qcolor
