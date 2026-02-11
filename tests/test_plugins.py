@@ -746,6 +746,66 @@ class TestPolyHavenPluginCompositeTree:
         assert item.metadata.get("categories") == ["metal"]
         assert item.children == []
 
+    def test_search_attaches_cached_status_hints_for_lazy_composites(self, tmp_path: Path) -> None:
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        root = CompositeAsset(
+            id="polyhaven-sunset_hdri",
+            source="polyhaven",
+            external_id="sunset_hdri",
+            name="Sunset HDRI",
+            composite_type=CompositeType.HDRI,
+            children=[],
+        )
+        local_path = plugin.library_root / "sunset_hdri" / "sunset_2k.hdr"
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(b"data")
+
+        local_asset = Asset(
+            id="polyhaven-sunset_hdri:2k:hdr",
+            source="polyhaven",
+            external_id="sunset_hdri:2k:hdr",
+            name="sunset_2k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.LOCAL,
+            local_path=local_path,
+            remote_url="https://example.com/sunset_2k.hdr",
+            metadata={"resolution": "2k", "format": "hdr"},
+        )
+        cloud_asset = Asset(
+            id="polyhaven-sunset_hdri:4k:hdr",
+            source="polyhaven",
+            external_id="sunset_hdri:4k:hdr",
+            name="sunset_4k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.CLOUD,
+            local_path=None,
+            remote_url="https://example.com/sunset_4k.hdr",
+            metadata={"resolution": "4k", "format": "hdr"},
+        )
+
+        db.upsert_composite(root)
+        db.set_composite_children(root.id, [local_asset, cloud_asset])
+
+        async def _fake_fetch(url: str, *args, **kwargs):  # noqa: ARG001
+            if "t=hdris" in url:
+                return {"sunset_hdri": {"name": "Sunset HDRI"}}
+            return {}
+
+        with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = _fake_fetch
+            results = asyncio.run(plugin.search(""))
+
+        assert len(results) == 1
+        item = results[0]
+        assert isinstance(item, CompositeAsset)
+        assert item.children == []  # still lazy until user expands
+        assert getattr(item, "_ui_display_status_hint", None) == AssetStatus.CLOUD
+        assert getattr(item, "_ui_is_mixed_hint", None) is True
+
     def test_expand_composite_creates_texture_children(self, tmp_path: Path) -> None:
         from uab.plugins.polyhaven import PolyHavenPlugin
 
