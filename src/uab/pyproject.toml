@@ -29,3 +29,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 package-dir = { uab = "." }
 packages = ["uab", "uab.core", "uab.ui", "uab.plugins", "uab.presenters", "uab.integrations"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+uab = ["assets/*", "ui/*.qss"]

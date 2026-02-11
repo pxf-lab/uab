@@ -46,7 +46,7 @@ from uab.ui.utils import load_hdri_thumbnail, LocalImageLoader
 
 # Placeholder image path (relative to package)
 _PLACEHOLDER_PATH = Path(
-    __file__).parent.parent.parent.parent / "assets" / "model-placeholder.png"
+    __file__).resolve().parent.parent / "assets" / "model-placeholder.png"
 
 
 class DetailView(QWidget):

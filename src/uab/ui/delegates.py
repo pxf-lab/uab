@@ -550,7 +550,7 @@ class AssetDelegate(QStyledItemDelegate):
             return self._placeholder_pixmap
 
         placeholder_path = (
-            Path(__file__).resolve().parents[3]
+            Path(__file__).resolve().parents[1]
             / "assets"
             / "model-placeholder.png"
         )
