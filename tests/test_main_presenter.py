@@ -313,6 +313,31 @@ class TestMainPresenterTabManagement:
             assert resolver("test_plugin") is plugin
             assert resolver("missing_plugin") is None
 
+    def test_create_tab_disables_import_ui_for_standalone_host(
+        self, mock_view: MagicMock
+    ) -> None:
+        """Standalone integration should hide import/renderer UI for all plugins."""
+        from uab.integrations.standalone import StandaloneIntegration
+
+        AssetLibraryPlugin._implementations["test_plugin"] = TestPlugin
+
+        with patch("uab.ui.browser.BrowserView") as mock_browser:
+            mock_browser_instance = MagicMock()
+            mock_browser.return_value = mock_browser_instance
+
+            from uab.presenters.main_presenter import MainPresenter
+
+            with patch.object(MainPresenter, "_create_default_tab"):
+                presenter = MainPresenter(
+                    view=mock_view, host=StandaloneIntegration())
+
+            presenter.create_tab("test_plugin")
+
+            mock_browser_instance.set_host_import_enabled.assert_called_with(False)
+            mock_browser_instance.set_renderer_selector_visible.assert_called_with(
+                False
+            )
+
 
 class TestMainPresenterRenderers:
     """Tests for renderer handling."""
