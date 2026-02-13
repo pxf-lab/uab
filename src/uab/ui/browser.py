@@ -40,7 +40,12 @@ from uab.core.models import (
     CompositeType,
     StandardAsset,
 )
-from uab.ui.composite_tree import CompositeTreeModel, CompositeTreeView, TreeItemDelegate
+from uab.ui.composite_tree import (
+    CompositeTreeModel,
+    CompositeTreeView,
+    TreeDataRole,
+    TreeItemDelegate,
+)
 from uab.ui.delegates import AssetDelegate
 from uab.ui.utils import load_hdri_thumbnail, LocalImageLoader
 
@@ -234,6 +239,15 @@ class DetailView(QWidget):
 
         right_layout.addWidget(self._detail_stack, 1)
 
+        self._download_selection_btn = QPushButton("Download Selection")
+        self._download_selection_btn.setObjectName("downloadSelectionButton")
+        self._download_selection_btn.setVisible(False)
+        self._download_selection_btn.setEnabled(False)
+        self._download_selection_btn.clicked.connect(
+            self._on_download_selection_clicked
+        )
+        right_layout.addWidget(self._download_selection_btn)
+
         # Action buttons at bottom (shared)
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
@@ -306,6 +320,11 @@ class DetailView(QWidget):
             self._download_enabled and getattr(
                 item, "has_cloud_children", False)
         )
+        self._download_selection_btn.setVisible(
+            self._download_enabled and getattr(item, "has_cloud_children", False)
+        )
+        # Enablement is managed by explicit tree selection logic.
+        self._download_selection_btn.setEnabled(False)
         self._import_btn.setEnabled(getattr(item, "has_local_children", False))
 
     def notify_item_updated(
@@ -404,6 +423,10 @@ class DetailView(QWidget):
                 self._download_enabled and getattr(
                     item, "has_cloud_children", False)
             )
+            self._download_selection_btn.setVisible(
+                self._download_enabled and getattr(item, "has_cloud_children", False)
+            )
+            self._download_selection_btn.setEnabled(False)
             # gray out import if nothing is local
             self._import_btn.setEnabled(
                 getattr(item, "has_local_children", False))
@@ -411,6 +434,8 @@ class DetailView(QWidget):
         else:
             self._detail_stack.setCurrentIndex(0)
             self._download_btn.setText("Download")
+            self._download_selection_btn.setVisible(False)
+            self._download_selection_btn.setEnabled(False)
 
             item_type = getattr(item, "type", None)
             if item_type is None and hasattr(item, "asset_type"):
@@ -531,6 +556,34 @@ class DetailView(QWidget):
             self.download_composite_clicked.emit(self._current_item.id, None)
         else:
             self.download_asset_clicked.emit(self._current_item.id)
+
+    def _on_download_selection_clicked(self) -> None:
+        """Handle Download Selection click for selected cloud leaf rows."""
+        if not isinstance(self._current_item, CompositeAsset):
+            return
+
+        selection_model = self._tree.selectionModel()
+        if selection_model is None:
+            return
+
+        emitted_ids: set[str] = set()
+        for index in selection_model.selectedIndexes():
+            item = index.data(int(TreeDataRole.ITEM))
+            if not isinstance(item, (Asset, StandardAsset)):
+                continue
+
+            status_any = index.data(int(TreeDataRole.STATUS))
+            is_cloud = (
+                status_any == AssetStatus.CLOUD
+                or str(status_any).strip().lower() == AssetStatus.CLOUD.value
+            )
+            if not is_cloud:
+                continue
+
+            item_id = getattr(item, "id", None)
+            if isinstance(item_id, str) and item_id and item_id not in emitted_ids:
+                emitted_ids.add(item_id)
+                self.download_asset_clicked.emit(item_id)
 
     def _on_import_clicked(self) -> None:
         """Handle import button click."""
