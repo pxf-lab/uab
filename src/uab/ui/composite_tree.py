@@ -8,7 +8,13 @@ from typing import Any
 
 from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import QStyle, QStyleOptionViewItem, QStyledItemDelegate, QTreeView
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QStyle,
+    QStyleOptionViewItem,
+    QStyledItemDelegate,
+    QTreeView,
+)
 
 from uab.core.models import Asset, AssetStatus, CompositeAsset, StandardAsset
 from uab.ui.delegates import AssetStatusBadge
@@ -256,6 +262,7 @@ class CompositeTreeView(QTreeView):
         self.setHeaderHidden(True)
         self.setUniformRowHeights(True)
         self.setAnimated(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setIndentation(18)
         self.setRootIsDecorated(True)
         self.setExpandsOnDoubleClick(True)
