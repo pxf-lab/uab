@@ -178,6 +178,56 @@ class TestTabPresenterMilestone5:
         plugin.expand_mock.assert_awaited_once()
         mock_view.show_detail.assert_called_with(expanded)
 
+    def test_preloaded_composite_detail_indexes_leaf_for_download(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
+    ) -> None:
+        from uab.presenters.tab_presenter import TabPresenter
+
+        leaf = Asset(
+            id="polyhaven-abandoned_greenhouse:2k:hdr",
+            source="polyhaven",
+            external_id="abandoned_greenhouse:2k:hdr",
+            name="abandoned_greenhouse_2k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.CLOUD,
+            remote_url="https://example.com/abandoned_greenhouse_2k.hdr",
+            metadata={"resolution": "2k", "format": "hdr"},
+        )
+        composite = CompositeAsset(
+            id="polyhaven-abandoned_greenhouse",
+            source="polyhaven",
+            external_id="abandoned_greenhouse",
+            name="Abandoned Greenhouse",
+            composite_type=CompositeType.HDRI,
+            children=[leaf],
+        )
+
+        updated_leaf = Asset.from_dict(
+            {
+                **leaf.to_dict(),
+                "status": AssetStatus.LOCAL.value,
+                "local_path": str(tmp_path / "abandoned_greenhouse_2k.hdr"),
+            }
+        )
+
+        plugin = PresenterTestPlugin(items=[composite], plugin_id="local", can_download=False)
+        source_plugin = PresenterTestPlugin(items=[], plugin_id="polyhaven", can_download=True)
+        source_plugin.download_asset_mock.return_value = updated_leaf
+
+        presenter = TabPresenter(
+            plugin=plugin,
+            view=mock_view,
+            host=mock_host,
+            get_plugin_by_source=lambda source: source_plugin if source == "polyhaven" else None,
+        )
+        asyncio.run(presenter._do_search(""))
+
+        # Preloaded composite: no expand call, but detail should still index descendants.
+        asyncio.run(presenter._do_show_detail(composite.id))
+        presenter._on_download_asset_requested(leaf.id)
+
+        source_plugin.download_asset_mock.assert_awaited_once()
+
     def test_download_asset_requested_updates_single_asset(
         self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
     ) -> None:
