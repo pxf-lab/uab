@@ -153,10 +153,7 @@ class MainPresenter:
             plugin.can_download or plugin_id == "local")
         browser_view.set_remove_enabled(plugin.can_remove)
 
-        # Host import UI is disabled globally in standalone mode.
-        is_local_library = plugin_id == "local"
-        host_supports_import = self._host.supports_import
-        show_import_ui = host_supports_import and not is_local_library
+        show_import_ui = self._host.supports_import
         browser_view.set_host_import_enabled(show_import_ui)
         browser_view.set_renderer_selector_visible(show_import_ui)
 
