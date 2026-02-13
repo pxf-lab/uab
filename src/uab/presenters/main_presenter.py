@@ -220,6 +220,7 @@ class MainPresenter:
             plugin=plugin,
             view=view,
             host=self._host,
+            get_plugin_by_source=self._plugins.get,
         )
 
         tab_presenter.status_message.connect(self._view.set_status)
