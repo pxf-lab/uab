@@ -559,12 +559,16 @@ class DetailView(QWidget):
         if isinstance(self._current_item, CompositeAsset):
             self.download_composite_clicked.emit(self._current_item.id, None)
         else:
-            self.download_asset_clicked.emit(self._current_item.id)
+            self._emit_asset_download_request(self._current_item.id)
 
     def _on_download_selection_clicked(self) -> None:
         """Handle Download Selection click for selected cloud leaf rows."""
         for item_id in self._selected_downloadable_leaf_ids():
-            self.download_asset_clicked.emit(item_id)
+            self._emit_asset_download_request(item_id)
+
+    def _emit_asset_download_request(self, asset_id: str) -> None:
+        """Dispatch a leaf download through the existing asset download signal."""
+        self.download_asset_clicked.emit(asset_id)
 
     def _on_tree_selection_changed(self, *_args) -> None:
         """Refresh Download Selection enablement when tree selection changes."""
