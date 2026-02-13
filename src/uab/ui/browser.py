@@ -410,7 +410,6 @@ class DetailView(QWidget):
 
         else:
             self._detail_stack.setCurrentIndex(0)
-            self._resolution_combo.setVisible(False)
             self._download_btn.setText("Download")
 
             item_type = getattr(item, "type", None)
@@ -529,10 +528,7 @@ class DetailView(QWidget):
             return
 
         if isinstance(self._current_item, CompositeAsset):
-            resolution_text = self._resolution_combo.currentText()
-            resolution: str | None = None if resolution_text == "All" else resolution_text
-            self.download_composite_clicked.emit(
-                self._current_item.id, resolution)
+            self.download_composite_clicked.emit(self._current_item.id, None)
         else:
             self.download_asset_clicked.emit(self._current_item.id)
 

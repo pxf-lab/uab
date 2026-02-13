@@ -615,6 +615,10 @@ class TabPresenter(QObject):
                 self.status_message.emit(f"Failed to expand {item.name}: {e}")
 
         if isinstance(item, CompositeAsset):
+            # Local library may return composites that already include descendants
+            # from DB; index them so per-leaf actions (tree download/import) can
+            # resolve child IDs from the cache.
+            self._index_composite_tree(item)
             propagate_preferred_thumbnail(item)
 
         # UI will be updated to support composites
