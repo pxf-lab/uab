@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from PySide6.QtCore import QObject, Signal, Slot, QTimer
 from PySide6.QtWidgets import QApplication, QWidget
@@ -247,6 +247,7 @@ class TabPresenter(QObject):
         plugin: AssetLibraryPlugin,
         view: BrowserView,
         host: HostIntegration,
+        get_plugin_by_source: Callable[[str], AssetLibraryPlugin | None] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -254,6 +255,7 @@ class TabPresenter(QObject):
         self._plugin = plugin
         self._view = view
         self._host = host
+        self._get_plugin_by_source = get_plugin_by_source
 
         self._current_task: asyncio.Task | None = None
 
@@ -857,6 +859,33 @@ class TabPresenter(QObject):
         """Refresh view with current top-level items."""
         self._view.set_items(self._current_items)
 
+    def _resolve_download_plugin(self, item: Browsable) -> AssetLibraryPlugin | None:
+        """
+        Resolve which plugin should handle downloading this item.
+
+        By default, downloads come from this tab's plugin. For mixed-source views
+        (notably Local Library), an optional resolver can route downloads to the
+        item's source plugin.
+        """
+        source = getattr(item, "source", None)
+
+        if isinstance(source, str) and source and source == self._plugin.plugin_id:
+            return self._plugin if self._plugin.can_download else None
+
+        if isinstance(source, str) and source and self._get_plugin_by_source is not None:
+            try:
+                source_plugin = self._get_plugin_by_source(source)
+            except Exception as e:
+                logger.debug(
+                    "Failed to resolve plugin for source '%s': %s", source, e
+                )
+                source_plugin = None
+            if source_plugin is not None and source_plugin.can_download:
+                return source_plugin
+
+        # Fallback for items without a valid source field.
+        return self._plugin if self._plugin.can_download else None
+
     async def _do_download_asset(self, asset_id: str) -> None:
         """Execute a single-asset download asynchronously."""
         item = self._item_cache.get(asset_id)
@@ -871,6 +900,14 @@ class TabPresenter(QObject):
         status = getattr(item, "status", item.display_status)
         if status != AssetStatus.CLOUD:
             logger.info(f"Item {asset_id} is not a cloud asset")
+            return
+
+        download_plugin = self._resolve_download_plugin(item)
+        if download_plugin is None:
+            source = getattr(item, "source", "unknown")
+            msg = f"Download is not available for source '{source}'."
+            logger.info(msg)
+            self.status_message.emit(msg)
             return
 
         original_status = status
@@ -889,11 +926,11 @@ class TabPresenter(QObject):
 
             updated: Browsable
             if isinstance(item, Asset):
-                updated = await self._plugin.download_asset(item)
-            elif isinstance(item, StandardAsset) and hasattr(self._plugin, "download"):
+                updated = await download_plugin.download_asset(item)
+            elif isinstance(item, StandardAsset) and hasattr(download_plugin, "download"):
                 resolution = "2k"
                 # type: ignore[attr-defined]
-                updated = await self._plugin.download(item, resolution)
+                updated = await download_plugin.download(item, resolution)
             else:
                 raise NotImplementedError(
                     f"Plugin does not support downloading this item type: {type(item)}"
@@ -910,7 +947,7 @@ class TabPresenter(QObject):
             logger.info(f"Download complete: {updated.name}")
 
             self.download_complete.emit(
-                {"source": self._plugin.plugin_id,
+                {"source": download_plugin.plugin_id,
                     "downloaded_item_ids": [updated.id]}
             )
 
@@ -934,9 +971,19 @@ class TabPresenter(QObject):
             logger.warning(f"Composite not found for download: {composite_id}")
             return
 
+        download_plugin = self._resolve_download_plugin(item)
+        if download_plugin is None:
+            source = getattr(item, "source", "unknown")
+            msg = f"Download is not available for source '{source}'."
+            logger.info(msg)
+            self.status_message.emit(msg)
+            return
+
         try:
             self.status_message.emit(f"Downloading {item.name}...")
-            updated = await self._plugin.download_composite(item, resolution=resolution, recursive=True)
+            updated = await download_plugin.download_composite(
+                item, resolution=resolution, recursive=True
+            )
 
             # Replace + re-index expanded tree
             self._expanded_composites.add(updated.id)
@@ -953,7 +1000,7 @@ class TabPresenter(QObject):
             self.status_message.emit(f"Downloaded {updated.name}")
 
             self.download_complete.emit(
-                {"source": self._plugin.plugin_id,
+                {"source": download_plugin.plugin_id,
                     "downloaded_item_ids": downloaded_asset_ids}
             )
 
