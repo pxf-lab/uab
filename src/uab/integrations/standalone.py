@@ -7,12 +7,43 @@ application. It's useful for UI development, testing, and debugging.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
-from uab.core.interfaces import HostIntegration
-from uab.core.models import StandardAsset
+from uab.core.interfaces import HostIntegration, RenderStrategy
+from uab.core.models import CompositeAsset, StandardAsset
 
 logger = logging.getLogger(__name__)
+
+
+class _NoopStrategy(RenderStrategy):
+    """RenderStrategy stub for standalone mode (never executed)."""
+
+    def get_required_texture_maps(self) -> set[str]:
+        return set()
+
+    def create_environment_light(
+        self, composite: CompositeAsset, options: dict[str, Any]
+    ) -> Any:  # noqa: ANN401
+        raise NotImplementedError
+
+    def update_environment_light(
+        self, asset: StandardAsset, options: dict[str, Any]
+    ) -> None:
+        raise NotImplementedError
+
+    def create_material_from_textures(
+        self, name: str, textures: dict[str, Path], options: dict[str, Any]
+    ) -> Any:  # noqa: ANN401
+        raise NotImplementedError
+
+    def create_material(
+        self, composite: CompositeAsset, options: dict[str, Any]
+    ) -> Any:  # noqa: ANN401
+        raise NotImplementedError
+
+    def update_material(self, asset: StandardAsset, options: dict[str, Any]) -> None:
+        raise NotImplementedError
 
 
 class StandaloneIntegration(HostIntegration):
@@ -26,10 +57,22 @@ class StandaloneIntegration(HostIntegration):
     actual scene objects.
     """
 
+    _SUPPORTED_RENDERERS = ["arnold", "redshift", "karma"]
+
+    def __init__(self) -> None:
+        self._strategies: dict[str, RenderStrategy] = {}
+        self._load_strategies()
+
+    def _load_strategies(self) -> None:
+        # In standalone mode we register placeholder strategies so the UI can
+        # exercise renderer selection logic consistently across integrations.
+        self._strategies = {r: _NoopStrategy()
+                            for r in self._SUPPORTED_RENDERERS}
+
     @property
     def uab_supported_renderers(self) -> list[str]:
-        """Return mock renderer list for testing."""
-        return ["arnold", "redshift", "karma"]
+        """Return renderer identifiers that have a registered strategy."""
+        return [r for r in self._SUPPORTED_RENDERERS if r in self._strategies]
 
     def import_asset(self, asset: StandardAsset, options: dict[str, Any]) -> None:
         """
@@ -73,7 +116,7 @@ class StandaloneIntegration(HostIntegration):
         In standalone mode, we pretend all renderers are available
         so the UI can be fully tested.
         """
-        return ["arnold", "redshift", "karma"]
+        return self._SUPPORTED_RENDERERS.copy()
 
     def get_active_renderer(self) -> str:
         """
@@ -90,5 +133,12 @@ class StandaloneIntegration(HostIntegration):
         Standalone mode does not support node replacement.
 
         The "Replace" context menu action will not be shown in standalone mode.
+        """
+        return False
+
+    @property
+    def supports_import(self) -> bool:
+        """
+        Standalone mode does not support importing into a host scene.
         """
         return False

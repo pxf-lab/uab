@@ -332,6 +332,16 @@ class HostIntegration(ABC):
         """
         return False
 
+    @property
+    def supports_import(self) -> bool:
+        """
+        Whether this host supports import actions from the browser UI.
+
+        Hosts can disable this globally (e.g., standalone mode) to hide import
+        affordances for all plugins.
+        """
+        return True
+
     def get_node_label_for_asset_type(self, asset_type: AssetType) -> str:
         """
         Return the host-specific node label for an asset type.

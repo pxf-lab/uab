@@ -153,10 +153,12 @@ class MainPresenter:
             plugin.can_download or plugin_id == "local")
         browser_view.set_remove_enabled(plugin.can_remove)
 
-        # Local Library tab should not expose host import/renderer UI
+        # Host import UI is disabled globally in standalone mode.
         is_local_library = plugin_id == "local"
-        browser_view.set_host_import_enabled(not is_local_library)
-        browser_view.set_renderer_selector_visible(not is_local_library)
+        host_supports_import = self._host.supports_import
+        show_import_ui = host_supports_import and not is_local_library
+        browser_view.set_host_import_enabled(show_import_ui)
+        browser_view.set_renderer_selector_visible(show_import_ui)
 
         renderers = self._get_available_renderers()
         browser_view.set_renderers(renderers)
