@@ -301,6 +301,12 @@ BrowserView QListView::item:selected {
     border: 2px solid #4a9eff;
 }
 
+#backButton:disabled {
+    background-color: #242424;
+    border: 2px solid #333333;
+    color: #666666;
+}
+
 /* Detail view name label */
 #detailNameLabel {
     font-size: 14pt;
@@ -360,6 +366,12 @@ BrowserView QListView::item:selected {
 #detailRightPanel QPushButton:hover {
     background-color: #3d3d3d;
     border: 2px solid #4d4d4d;
+}
+
+#detailRightPanel QPushButton:disabled {
+    background-color: #242424;
+    border: 2px solid #333333;
+    color: #666666;
 }
 
 #detailRightPanel QPushButton:pressed {

@@ -325,9 +325,7 @@ class DetailView(QWidget):
             self._download_enabled and getattr(
                 item, "has_cloud_children", False)
         )
-        self._download_selection_btn.setVisible(
-            self._download_enabled and getattr(item, "has_cloud_children", False)
-        )
+        self._download_selection_btn.setVisible(isinstance(item, CompositeAsset))
         self._update_download_selection_enabled()
         self._import_btn.setEnabled(getattr(item, "has_local_children", False))
 
@@ -427,9 +425,7 @@ class DetailView(QWidget):
                 self._download_enabled and getattr(
                     item, "has_cloud_children", False)
             )
-            self._download_selection_btn.setVisible(
-                self._download_enabled and getattr(item, "has_cloud_children", False)
-            )
+            self._download_selection_btn.setVisible(True)
             self._update_download_selection_enabled()
             # gray out import if nothing is local
             self._import_btn.setEnabled(
@@ -606,7 +602,7 @@ class DetailView(QWidget):
         return selected_ids
 
     def _update_download_selection_enabled(self) -> None:
-        """Enable Download Selection when selected cloud leaves are present."""
+        """Enable Download Selection when multiple cloud leaves are selected."""
         if not isinstance(self._current_item, CompositeAsset):
             self._download_selection_btn.setEnabled(False)
             return
@@ -614,7 +610,7 @@ class DetailView(QWidget):
             self._download_selection_btn.setEnabled(False)
             return
         self._download_selection_btn.setEnabled(
-            len(self._selected_downloadable_leaf_ids()) > 0
+            len(self._selected_downloadable_leaf_ids()) > 1
         )
 
     def _on_import_clicked(self) -> None:
