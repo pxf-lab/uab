@@ -55,8 +55,16 @@ class PresenterTestPlugin(AssetLibraryPlugin):
     plugin_id = "presenter_test"
     display_name = "Presenter Test"
 
-    def __init__(self, items: list[object]) -> None:
+    def __init__(
+        self,
+        items: list[object],
+        *,
+        plugin_id: str = "presenter_test",
+        can_download: bool = True,
+    ) -> None:
         self._items = items
+        self.plugin_id = plugin_id
+        self._can_download = can_download
         self.search_mock = MagicMock()
         self.expand_mock = AsyncMock()
         self.download_asset_mock = AsyncMock()
@@ -81,7 +89,7 @@ class PresenterTestPlugin(AssetLibraryPlugin):
 
     @property
     def can_download(self) -> bool:
-        return True
+        return self._can_download
 
     @property
     def can_remove(self) -> bool:
@@ -282,3 +290,91 @@ class TestTabPresenterMilestone5:
         imported, options = mock_host.imported_composites[0]
         assert imported.id == material.id
         assert options["renderer"] == "arnold"
+
+    def test_download_asset_delegates_to_source_plugin(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
+    ) -> None:
+        from uab.presenters.tab_presenter import TabPresenter
+
+        asset = Asset(
+            id="polyhaven-rusty_metal:diffuse:2k",
+            source="polyhaven",
+            external_id="rusty_metal:diffuse:2k",
+            name="rusty_diff_2k.png",
+            asset_type=AssetType.TEXTURE,
+            status=AssetStatus.CLOUD,
+            remote_url="https://example.com/rusty_diff_2k.png",
+            metadata={"resolution": "2k", "map_type": "diffuse"},
+        )
+        updated = Asset.from_dict(
+            {
+                **asset.to_dict(),
+                "status": AssetStatus.LOCAL.value,
+                "local_path": str(tmp_path / "rusty_diff_2k.png"),
+            }
+        )
+
+        local_tab_plugin = PresenterTestPlugin(
+            items=[asset], plugin_id="local", can_download=False
+        )
+        source_plugin = PresenterTestPlugin(
+            items=[], plugin_id="polyhaven", can_download=True
+        )
+        source_plugin.download_asset_mock.return_value = updated
+
+        resolver = lambda source: source_plugin if source == "polyhaven" else None
+
+        presenter = TabPresenter(
+            plugin=local_tab_plugin,
+            view=mock_view,
+            host=mock_host,
+            get_plugin_by_source=resolver,
+        )
+        asyncio.run(presenter._do_search(""))
+
+        payloads: list[object] = []
+        presenter.download_complete.connect(lambda p: payloads.append(p))
+
+        presenter._on_download_asset_requested(asset.id)
+
+        local_tab_plugin.download_asset_mock.assert_not_awaited()
+        source_plugin.download_asset_mock.assert_awaited_once()
+        assert payloads and isinstance(payloads[-1], dict)
+        assert payloads[-1]["source"] == "polyhaven"
+        assert asset.id in payloads[-1]["downloaded_item_ids"]
+
+    def test_download_asset_without_source_plugin_emits_unavailable_message(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        from uab.presenters.tab_presenter import TabPresenter
+
+        asset = Asset(
+            id="unknown-item",
+            source="unknown_source",
+            external_id="unknown:item",
+            name="unknown.png",
+            asset_type=AssetType.TEXTURE,
+            status=AssetStatus.CLOUD,
+            remote_url="https://example.com/unknown.png",
+            metadata={},
+        )
+
+        local_tab_plugin = PresenterTestPlugin(
+            items=[asset], plugin_id="local", can_download=False
+        )
+
+        presenter = TabPresenter(
+            plugin=local_tab_plugin,
+            view=mock_view,
+            host=mock_host,
+            get_plugin_by_source=lambda source: None,
+        )
+        asyncio.run(presenter._do_search(""))
+
+        messages: list[str] = []
+        presenter.status_message.connect(lambda m: messages.append(m))
+
+        presenter._on_download_asset_requested(asset.id)
+
+        local_tab_plugin.download_asset_mock.assert_not_awaited()
+        assert messages and "Download is not available for source 'unknown_source'." in messages[-1]

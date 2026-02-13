@@ -283,6 +283,36 @@ class TestMainPresenterTabManagement:
             presenter.close_tab(0)
             assert presenter.tab_count == 1
 
+    def test_create_tab_passes_source_plugin_resolver_to_tab_presenter(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        """TabPresenter should receive source->plugin resolver from MainPresenter."""
+        AssetLibraryPlugin._implementations["test_plugin"] = TestPlugin
+
+        with patch("uab.ui.browser.BrowserView") as mock_browser, patch(
+            "uab.presenters.tab_presenter.TabPresenter"
+        ) as mock_tab_presenter:
+            mock_browser_instance = MagicMock()
+            mock_browser.return_value = mock_browser_instance
+
+            tab_presenter_instance = MagicMock()
+            mock_tab_presenter.return_value = tab_presenter_instance
+
+            from uab.presenters.main_presenter import MainPresenter
+
+            with patch.object(MainPresenter, "_create_default_tab"):
+                presenter = MainPresenter(view=mock_view, host=mock_host)
+
+            presenter.create_tab("test_plugin")
+
+            kwargs = mock_tab_presenter.call_args.kwargs
+            resolver = kwargs.get("get_plugin_by_source")
+            assert callable(resolver)
+
+            plugin = presenter.plugins["test_plugin"]
+            assert resolver("test_plugin") is plugin
+            assert resolver("missing_plugin") is None
+
 
 class TestMainPresenterRenderers:
     """Tests for renderer handling."""
