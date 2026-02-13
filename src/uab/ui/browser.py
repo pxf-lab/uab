@@ -95,11 +95,22 @@ class DetailView(QWidget):
         left_layout.setSpacing(15)
 
         # Back button at top
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(15)
+
         self._back_btn = QPushButton("← Back")
         self._back_btn.setObjectName("backButton")
         self._back_btn.setMaximumWidth(100)
         self._back_btn.clicked.connect(self._on_back_clicked)
-        left_layout.addWidget(self._back_btn)
+        top_layout.addWidget(self._back_btn)
+
+        self._top_name_label = QLabel()
+        self._top_name_label.setObjectName("detailTopNameLabel")
+        top_layout.addWidget(self._top_name_label)
+        top_layout.addStretch()
+
+        left_layout.addLayout(top_layout)
 
         # Preview image
         self._preview_label = QLabel()
@@ -402,6 +413,7 @@ class DetailView(QWidget):
         """
         self._current_item = item
         self._preview_needs_load = True
+        self._top_name_label.setText(item.name)
 
         if isinstance(item, CompositeAsset):
             self._detail_stack.setCurrentIndex(1)

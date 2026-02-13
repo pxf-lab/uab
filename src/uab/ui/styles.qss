@@ -307,6 +307,13 @@ BrowserView QListView::item:selected {
     color: #666666;
 }
 
+/* Top name label next to back button */
+#detailTopNameLabel {
+    font-size: 16pt;
+    font-weight: bold;
+    color: #e0e0e0;
+}
+
 /* Detail view name label */
 #detailNameLabel {
     font-size: 14pt;
