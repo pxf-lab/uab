@@ -145,7 +145,12 @@ class MainPresenter:
 
         browser_view = BrowserView()
 
-        browser_view.set_download_enabled(plugin.can_download)
+        # Local Library shows mixed-source items; enable download controls so
+        # source-aware delegation can download cloud variants from this tab.
+        # TODO: gotta be a better way to do this
+        # TODO: review downloadable flag on plugins since local can download now too.
+        browser_view.set_download_enabled(
+            plugin.can_download or plugin_id == "local")
         browser_view.set_remove_enabled(plugin.can_remove)
 
         # Local Library tab should not expose host import/renderer UI
