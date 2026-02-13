@@ -62,6 +62,29 @@ class TestPlugin(AssetLibraryPlugin):
         return False
 
 
+class LocalTabTestPlugin(AssetLibraryPlugin):
+    """Local-tab plugin stub for import visibility tests."""
+
+    plugin_id = "local"
+    display_name = "Local Library"
+
+    async def search(self, query: str) -> list[StandardAsset]:
+        return []
+
+    async def download(
+        self, asset: StandardAsset, resolution: str | None = None
+    ) -> StandardAsset:
+        return asset
+
+    @property
+    def can_download(self) -> bool:
+        return False
+
+    @property
+    def can_remove(self) -> bool:
+        return True
+
+
 @pytest.fixture
 def mock_view() -> MagicMock:
     """Create a mock MainWidget view."""
@@ -336,6 +359,28 @@ class TestMainPresenterTabManagement:
             mock_browser_instance.set_host_import_enabled.assert_called_with(False)
             mock_browser_instance.set_renderer_selector_visible.assert_called_with(
                 False
+            )
+
+    def test_create_tab_enables_import_ui_for_local_plugin_when_host_supports_import(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        """Non-standalone hosts should keep import UI enabled for Local tab."""
+        AssetLibraryPlugin._implementations["local"] = LocalTabTestPlugin
+
+        with patch("uab.ui.browser.BrowserView") as mock_browser:
+            mock_browser_instance = MagicMock()
+            mock_browser.return_value = mock_browser_instance
+
+            from uab.presenters.main_presenter import MainPresenter
+
+            with patch.object(MainPresenter, "_create_default_tab"):
+                presenter = MainPresenter(view=mock_view, host=mock_host)
+
+            presenter.create_tab("local")
+
+            mock_browser_instance.set_host_import_enabled.assert_called_with(True)
+            mock_browser_instance.set_renderer_selector_visible.assert_called_with(
+                True
             )
 
 
