@@ -231,6 +231,11 @@ class DetailView(QWidget):
         self._tree_delegate.download_clicked.connect(
             self.download_asset_clicked.emit)
         self._tree.item_expanded.connect(self.tree_item_expanded.emit)
+        selection_model = self._tree.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(
+                self._on_tree_selection_changed
+            )
 
         composite_layout.addWidget(self._tree, 1)
 
@@ -323,8 +328,7 @@ class DetailView(QWidget):
         self._download_selection_btn.setVisible(
             self._download_enabled and getattr(item, "has_cloud_children", False)
         )
-        # Enablement is managed by explicit tree selection logic.
-        self._download_selection_btn.setEnabled(False)
+        self._update_download_selection_enabled()
         self._import_btn.setEnabled(getattr(item, "has_local_children", False))
 
     def notify_item_updated(
@@ -426,7 +430,7 @@ class DetailView(QWidget):
             self._download_selection_btn.setVisible(
                 self._download_enabled and getattr(item, "has_cloud_children", False)
             )
-            self._download_selection_btn.setEnabled(False)
+            self._update_download_selection_enabled()
             # gray out import if nothing is local
             self._import_btn.setEnabled(
                 getattr(item, "has_local_children", False))
@@ -559,14 +563,24 @@ class DetailView(QWidget):
 
     def _on_download_selection_clicked(self) -> None:
         """Handle Download Selection click for selected cloud leaf rows."""
+        for item_id in self._selected_downloadable_leaf_ids():
+            self.download_asset_clicked.emit(item_id)
+
+    def _on_tree_selection_changed(self, *_args) -> None:
+        """Refresh Download Selection enablement when tree selection changes."""
+        self._update_download_selection_enabled()
+
+    def _selected_downloadable_leaf_ids(self) -> list[str]:
+        """Return unique selected leaf IDs with CLOUD status."""
         if not isinstance(self._current_item, CompositeAsset):
-            return
+            return []
 
         selection_model = self._tree.selectionModel()
         if selection_model is None:
-            return
+            return []
 
-        emitted_ids: set[str] = set()
+        selected_ids: list[str] = []
+        seen: set[str] = set()
         for index in selection_model.selectedIndexes():
             item = index.data(int(TreeDataRole.ITEM))
             if not isinstance(item, (Asset, StandardAsset)):
@@ -581,9 +595,23 @@ class DetailView(QWidget):
                 continue
 
             item_id = getattr(item, "id", None)
-            if isinstance(item_id, str) and item_id and item_id not in emitted_ids:
-                emitted_ids.add(item_id)
-                self.download_asset_clicked.emit(item_id)
+            if isinstance(item_id, str) and item_id and item_id not in seen:
+                seen.add(item_id)
+                selected_ids.append(item_id)
+
+        return selected_ids
+
+    def _update_download_selection_enabled(self) -> None:
+        """Enable Download Selection when selected cloud leaves are present."""
+        if not isinstance(self._current_item, CompositeAsset):
+            self._download_selection_btn.setEnabled(False)
+            return
+        if not self._download_enabled:
+            self._download_selection_btn.setEnabled(False)
+            return
+        self._download_selection_btn.setEnabled(
+            len(self._selected_downloadable_leaf_ids()) > 0
+        )
 
     def _on_import_clicked(self) -> None:
         """Handle import button click."""
