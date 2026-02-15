@@ -429,7 +429,19 @@ class DetailView(QWidget):
             self._composite_source_label.setText(item.source.title())
             meta = self._get_metadata_dict(item)
             self._composite_author_label.setText(self._format_author(meta))
-            self._composite_license_label.setText(self._format_license(meta))
+            license_text = self._format_license(meta)
+            license_url = meta.get("license_url")
+            if license_url:
+                self._composite_license_label.setTextFormat(
+                    Qt.TextFormat.RichText)
+                license_text = f"<a href='{license_url}'>{license_text}</a>"
+                self._composite_license_label.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextBrowserInteraction)
+                self._composite_license_label.setOpenExternalLinks(True)
+                self._composite_license_label.setCursor(
+                    Qt.CursorShape.PointingHandCursor)
+
+            self._composite_license_label.setText(license_text)
 
             self._tree_model.set_root(item)
             self._tree.expandToDepth(0)

@@ -212,6 +212,7 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
                     metadata={
                         "asset_type": asset_type.value,
                         "license": "CC0",
+                        "license_url": "https://polyhaven.com/license",
                         "categories": info.get("categories", []),
                         "tags": info.get("tags", []),
                         "authors": info.get("authors", {}),
