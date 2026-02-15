@@ -336,7 +336,8 @@ class DetailView(QWidget):
             self._download_enabled and getattr(
                 item, "has_cloud_children", False)
         )
-        self._download_selection_btn.setVisible(isinstance(item, CompositeAsset))
+        self._download_selection_btn.setVisible(
+            isinstance(item, CompositeAsset))
         self._update_download_selection_enabled()
         self._import_btn.setEnabled(getattr(item, "has_local_children", False))
 
@@ -425,7 +426,7 @@ class DetailView(QWidget):
             self._warnings.setText("\n".join(warnings))
             self._warnings.setVisible(show_warnings)
 
-            self._composite_source_label.setText(item.source)
+            self._composite_source_label.setText(item.source.title())
             meta = self._get_metadata_dict(item)
             self._composite_author_label.setText(self._format_author(meta))
             self._composite_license_label.setText(self._format_license(meta))
