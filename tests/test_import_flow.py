@@ -172,6 +172,88 @@ def test_get_asset_for_resolution_returns_none_when_no_local(tmp_path: Path) -> 
     assert integration._get_asset_for_resolution(comp, "2k") is None
 
 
+def test_get_hdri_asset_for_preferences_prefers_requested_format_at_exact_resolution(
+    tmp_path: Path,
+) -> None:
+    integration = HoudiniIntegration()
+
+    hdr_2k = _make_asset(
+        tmp_path / "sunset_2k.hdr",
+        asset_type=AssetType.HDRI,
+        resolution="2k",
+    )
+    hdr_2k.metadata["format"] = "hdr"
+
+    exr_2k = _make_asset(
+        tmp_path / "sunset_2k.exr",
+        asset_type=AssetType.HDRI,
+        resolution="2k",
+    )
+    exr_2k.metadata["format"] = "exr"
+
+    hdri = CompositeAsset(
+        id="hdri:sunset",
+        source="test",
+        external_id="sunset",
+        name="sunset",
+        composite_type=CompositeType.HDRI,
+        children=[hdr_2k, exr_2k],
+    )
+
+    selected = integration._get_hdri_asset_for_preferences(
+        hdri,
+        target_resolution="2k",
+        preferred_format="exr",
+    )
+    assert selected is not None
+    assert selected.id == exr_2k.id
+
+
+def test_get_hdri_asset_for_preferences_fallback_order(tmp_path: Path) -> None:
+    integration = HoudiniIntegration()
+
+    hdr_2k = _make_asset(
+        tmp_path / "sunset_2k.hdr",
+        asset_type=AssetType.HDRI,
+        resolution="2k",
+    )
+    hdr_2k.metadata["format"] = "hdr"
+
+    exr_4k = _make_asset(
+        tmp_path / "sunset_4k.exr",
+        asset_type=AssetType.HDRI,
+        resolution="4k",
+    )
+    exr_4k.metadata["format"] = "exr"
+
+    hdri = CompositeAsset(
+        id="hdri:sunset",
+        source="test",
+        external_id="sunset",
+        name="sunset",
+        composite_type=CompositeType.HDRI,
+        children=[hdr_2k, exr_4k],
+    )
+
+    # Exact resolution should win over preferred format.
+    selected_exact = integration._get_hdri_asset_for_preferences(
+        hdri,
+        target_resolution="2k",
+        preferred_format="exr",
+    )
+    assert selected_exact is not None
+    assert selected_exact.id == hdr_2k.id
+
+    # Without a target resolution, preferred format should win.
+    selected_preferred = integration._get_hdri_asset_for_preferences(
+        hdri,
+        target_resolution=None,
+        preferred_format="exr",
+    )
+    assert selected_preferred is not None
+    assert selected_preferred.id == exr_4k.id
+
+
 def test_import_material_uses_requested_resolution(tmp_path: Path) -> None:
     integration = HoudiniIntegration()
     dummy = DummyStrategy(required={"diffuse", "base_color", "albedo"})

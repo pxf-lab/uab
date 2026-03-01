@@ -132,3 +132,68 @@ def test_maya_strategy_helpers_normalize_and_select_resolution(tmp_path: Path) -
     assert selected is not None
     assert selected.id == "a4k"
 
+
+def test_maya_integration_selects_hdri_by_resolution_then_format(tmp_path: Path) -> None:
+    """HDRI selection should honor requested format with deterministic fallbacks."""
+    from uab.integrations.maya.integration import MayaIntegration
+
+    integration = MayaIntegration()
+
+    hdr_2k = Asset(
+        id="hdr2k",
+        source="test",
+        external_id="sunset:2k:hdr",
+        name="sunset_2k.hdr",
+        asset_type=AssetType.HDRI,
+        status=AssetStatus.LOCAL,
+        local_path=tmp_path / "sunset_2k.hdr",
+        metadata={"resolution": "2k", "format": "hdr"},
+    )
+    exr_2k = Asset(
+        id="exr2k",
+        source="test",
+        external_id="sunset:2k:exr",
+        name="sunset_2k.exr",
+        asset_type=AssetType.HDRI,
+        status=AssetStatus.LOCAL,
+        local_path=tmp_path / "sunset_2k.exr",
+        metadata={"resolution": "2k", "format": "exr"},
+    )
+    exr_4k = Asset(
+        id="exr4k",
+        source="test",
+        external_id="sunset:4k:exr",
+        name="sunset_4k.exr",
+        asset_type=AssetType.HDRI,
+        status=AssetStatus.LOCAL,
+        local_path=tmp_path / "sunset_4k.exr",
+        metadata={"resolution": "4k", "format": "exr"},
+    )
+
+    hdri = CompositeAsset(
+        id="hdri:sunset",
+        source="test",
+        external_id="sunset",
+        name="Sunset",
+        composite_type=CompositeType.HDRI,
+        children=[hdr_2k, exr_2k, exr_4k],
+    )
+
+    # Exact resolution + preferred format.
+    selected = integration._get_hdri_asset_for_preferences(
+        hdri,
+        target_resolution="2k",
+        preferred_format="exr",
+    )
+    assert selected is not None
+    assert selected.id == "exr2k"
+
+    # Exact resolution should beat preferred format at a different resolution.
+    selected_exact_any = integration._get_hdri_asset_for_preferences(
+        hdri,
+        target_resolution="2k",
+        preferred_format="hdr",
+    )
+    assert selected_exact_any is not None
+    assert selected_exact_any.id == "hdr2k"
+
