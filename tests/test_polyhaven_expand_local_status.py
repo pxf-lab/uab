@@ -155,3 +155,56 @@ def test_expand_texture_keeps_cloud_when_file_missing(tmp_path: Path) -> None:
     assert child.status == AssetStatus.CLOUD
     assert child.local_path is None
 
+
+def test_expand_hdri_reconciles_status_per_format_variant(tmp_path: Path) -> None:
+    db = AssetDatabase(db_path=tmp_path / "test.db")
+    plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+    hdri = CompositeAsset(
+        id="polyhaven-sunset_hdri",
+        source="polyhaven",
+        external_id="sunset_hdri",
+        name="Sunset HDRI",
+        composite_type=CompositeType.HDRI,
+        metadata={},
+        children=[],
+    )
+    manifest = {
+        "hdri": {
+            "2k": {
+                "hdr": {
+                    "url": "https://example.com/sunset_2k.hdr",
+                    "size": 20,
+                },
+                "exr": {
+                    "url": "https://example.com/sunset_2k.exr",
+                    "size": 40,
+                },
+            }
+        }
+    }
+
+    local_hdr = plugin.library_root / "sunset_hdri" / "sunset_2k.hdr"
+    local_hdr.parent.mkdir(parents=True, exist_ok=True)
+    local_hdr.write_bytes(b"data")
+
+    with patch.object(plugin, "_fetch_json", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = manifest
+        expanded = asyncio.run(plugin.expand_composite(hdri))
+
+    assert len(expanded.children) == 2
+    by_format = {
+        child.metadata.get("format"): child
+        for child in expanded.children
+        if isinstance(child, Asset)
+    }
+    assert set(by_format.keys()) == {"hdr", "exr"}
+
+    assert by_format["hdr"].external_id == "sunset_hdri:2k:hdr"
+    assert by_format["hdr"].status == AssetStatus.LOCAL
+    assert by_format["hdr"].local_path == local_hdr
+
+    assert by_format["exr"].external_id == "sunset_hdri:2k:exr"
+    assert by_format["exr"].status == AssetStatus.CLOUD
+    assert by_format["exr"].local_path is None
+

@@ -247,6 +247,32 @@ class TestLocalLibraryPluginAddAssets:
         assert {c.metadata.get("resolution") for c in hdri.children} == {"2k", "4k"}
         assert {c.metadata.get("format") for c in hdri.children} == {"hdr", "exr"}
 
+    def test_add_assets_groups_same_resolution_hdri_formats_prefers_hdr_first(self, tmp_path: Path) -> None:
+        """When resolution ties, local HDRI grouping should order hdr before exr."""
+        from uab.plugins.local import LocalLibraryPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = LocalLibraryPlugin(db=db)
+
+        assets_dir = tmp_path / "hdris_same_res"
+        assets_dir.mkdir()
+        (assets_dir / "sunset_2k.exr").write_bytes(b"fake exr")
+        (assets_dir / "sunset_2k.hdr").write_bytes(b"fake hdr")
+
+        added = plugin.add_assets(assets_dir)
+
+        assert len(added) == 1
+        assert isinstance(added[0], CompositeAsset)
+        hdri = added[0]
+        assert hdri.composite_type == CompositeType.HDRI
+        assert len(hdri.children) == 2
+        assert all(isinstance(c, Asset) for c in hdri.children)
+        assert [
+            (c.metadata.get("resolution"), c.metadata.get("format"))
+            for c in hdri.children
+            if isinstance(c, Asset)
+        ] == [("2k", "hdr"), ("2k", "exr")]
+
     def test_add_assets_from_directory_groups_texture_files(self, tmp_path: Path) -> None:
         """Should group texture map files into a MATERIAL→TEXTURE→Asset tree."""
         from uab.plugins.local import LocalLibraryPlugin
@@ -653,7 +679,7 @@ class TestPolyHavenPluginSettingsSchema:
     """Tests for PolyHavenPlugin settings schema."""
 
     def test_settings_schema_includes_resolution(self, tmp_path: Path) -> None:
-        """Settings schema should include resolution options."""
+        """Default settings schema should include resolution options."""
         from uab.plugins.polyhaven import PolyHavenPlugin
 
         db = AssetDatabase(db_path=tmp_path / "test.db")
@@ -666,6 +692,27 @@ class TestPolyHavenPluginSettingsSchema:
         assert schema["resolution"]["type"] == "choice"
         assert "2k" in schema["resolution"]["options"]
         assert "4k" in schema["resolution"]["options"]
+
+    def test_hdri_settings_schema_adds_format_checkbox_before_resolution(self, tmp_path: Path) -> None:
+        """HDRI settings should show format checkbox above resolution."""
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+        hdri = CompositeAsset(
+            id="polyhaven-hdri_sky",
+            source="polyhaven",
+            external_id="hdri_sky",
+            name="HDRI Sky",
+            composite_type=CompositeType.HDRI,
+            children=[],
+        )
+
+        schema = plugin.get_settings_schema(hdri)
+        assert schema is not None
+        assert list(schema.keys())[:2] == ["use_exr", "resolution"]
+        assert schema["use_exr"]["type"] == "bool"
+        assert schema["resolution"]["type"] == "choice"
 
 
 def _make_material(external_id: str, name: str, thumbnail_url: str | None = None) -> CompositeAsset:
@@ -904,7 +951,10 @@ class TestPolyHavenPluginCompositeTree:
         manifest = {
             "hdri": {
                 "1k": {"hdr": {"url": "https://example.com/sunset_1k.hdr", "size": 10}},
-                "2k": {"exr": {"url": "https://example.com/sunset_2k.exr", "size": 20}},
+                "2k": {
+                    "hdr": {"url": "https://example.com/sunset_2k.hdr", "size": 15},
+                    "exr": {"url": "https://example.com/sunset_2k.exr", "size": 20},
+                },
             }
         }
 
@@ -913,18 +963,27 @@ class TestPolyHavenPluginCompositeTree:
             expanded = asyncio.run(plugin.expand_composite(hdri))
 
         assert expanded.composite_type == CompositeType.HDRI
-        assert len(expanded.children) == 2
+        assert len(expanded.children) == 3
         assert all(isinstance(a, Asset) for a in expanded.children)
-        by_res = {a.metadata["resolution"]: a for a in expanded.children}
-        assert by_res["1k"].remote_url == "https://example.com/sunset_1k.hdr"
-        assert by_res["1k"].thumbnail_url == thumb_url
-        assert by_res["1k"].metadata["format"] == "hdr"
-        assert by_res["2k"].remote_url == "https://example.com/sunset_2k.exr"
-        assert by_res["2k"].thumbnail_url == thumb_url
-        assert by_res["2k"].file_size == 20
+        assert [
+            (a.metadata["resolution"], a.metadata["format"])
+            for a in expanded.children
+        ] == [("1k", "hdr"), ("2k", "hdr"), ("2k", "exr")]
+
+        by_variant = {
+            (a.metadata["resolution"], a.metadata["format"]): a
+            for a in expanded.children
+        }
+        assert by_variant[("1k", "hdr")].remote_url == "https://example.com/sunset_1k.hdr"
+        assert by_variant[("1k", "hdr")].thumbnail_url == thumb_url
+        assert by_variant[("2k", "hdr")].remote_url == "https://example.com/sunset_2k.hdr"
+        assert by_variant[("2k", "hdr")].file_size == 15
+        assert by_variant[("2k", "exr")].remote_url == "https://example.com/sunset_2k.exr"
+        assert by_variant[("2k", "exr")].thumbnail_url == thumb_url
+        assert by_variant[("2k", "exr")].file_size == 20
 
         db_children = db.get_composite_children(expanded.id)
-        assert len(db_children) == 2
+        assert len(db_children) == 3
 
 
     def test_local_library_groups_downloaded_polyhaven_hdri_into_single_composite(self, tmp_path: Path) -> None:
@@ -951,7 +1010,10 @@ class TestPolyHavenPluginCompositeTree:
         manifest = {
             "hdri": {
                 "1k": {"hdr": {"url": "https://example.com/sunset_1k.hdr", "size": 10}},
-                "2k": {"hdr": {"url": "https://example.com/sunset_2k.hdr", "size": 20}},
+                "2k": {
+                    "hdr": {"url": "https://example.com/sunset_2k.hdr", "size": 20},
+                    "exr": {"url": "https://example.com/sunset_2k.exr", "size": 30},
+                },
             }
         }
 
@@ -978,13 +1040,23 @@ class TestPolyHavenPluginCompositeTree:
         assert local_hdri.source == "polyhaven"
         assert local_hdri.composite_type == CompositeType.HDRI
         assert local_hdri.name == "Sunset HDRI"
-        assert len(local_hdri.children) == 2
+        assert len(local_hdri.children) == 3
         assert all(isinstance(c, Asset) for c in local_hdri.children)
 
-        by_res = {c.metadata.get("resolution"): c for c in local_hdri.children}
-        assert set(by_res.keys()) == {"1k", "2k"}
-        assert by_res["2k"].status == AssetStatus.LOCAL
-        assert by_res["1k"].status == AssetStatus.CLOUD
+        assert [
+            (c.metadata.get("resolution"), c.metadata.get("format"))
+            for c in local_hdri.children
+            if isinstance(c, Asset)
+        ] == [("2k", "hdr"), ("2k", "exr"), ("1k", "hdr")]
+
+        by_variant = {
+            (c.metadata.get("resolution"), c.metadata.get("format")): c
+            for c in local_hdri.children
+            if isinstance(c, Asset)
+        }
+        assert by_variant[("2k", "hdr")].status == AssetStatus.LOCAL
+        assert by_variant[("2k", "exr")].status == AssetStatus.LOCAL
+        assert by_variant[("1k", "hdr")].status == AssetStatus.CLOUD
         assert local_hdri.is_mixed is True
 
     def test_expand_model_creates_asset_children(self, tmp_path: Path) -> None:
