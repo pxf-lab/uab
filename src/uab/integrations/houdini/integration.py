@@ -455,7 +455,13 @@ class HoudiniIntegration(HostIntegration):
         if not isinstance(target_resolution, str):
             target_resolution = None
 
-        selected = self._get_asset_for_resolution(composite, target_resolution)
+        preferred_format = "exr" if bool(
+            options.get("use_exr", False)) else "hdr"
+        selected = self._get_hdri_asset_for_preferences(
+            composite,
+            target_resolution=target_resolution,
+            preferred_format=preferred_format,
+        )
         if not selected or not selected.local_path:
             raise ValueError(f"No local HDRI available for: {composite.name}")
 
@@ -469,6 +475,15 @@ class HoudiniIntegration(HostIntegration):
                 logger.warning(
                     f"Requested resolution {target_resolution} but using {found_res or 'unknown'} for HDRI {composite.name}"
                 )
+
+        found_fmt = self._get_asset_format(selected)
+        if found_fmt and found_fmt != preferred_format:
+            logger.warning(
+                "Requested HDRI format %s but using %s for %s",
+                preferred_format,
+                found_fmt,
+                composite.name,
+            )
 
         # Pass a narrowed composite (single selected leaf) to the strategy.
         narrowed = CompositeAsset(
@@ -666,6 +681,69 @@ class HoudiniIntegration(HostIntegration):
         if m:
             return int(m.group("num"))
         return 0
+
+    def _get_asset_format(self, asset: Asset) -> str | None:
+        """Best-effort format lookup from metadata or file extension."""
+        if isinstance(asset.metadata, dict):
+            fmt_any = asset.metadata.get("format")
+            if isinstance(fmt_any, str) and fmt_any:
+                return fmt_any.lower()
+
+        if asset.local_path:
+            suffix = asset.local_path.suffix.lower().lstrip(".")
+            if suffix:
+                return suffix
+        return None
+
+    def _get_hdri_asset_for_preferences(
+        self,
+        composite: CompositeAsset,
+        target_resolution: str | None,
+        preferred_format: str | None,
+    ) -> Asset | None:
+        """
+        Select HDRI leaf with resolution+format preference and stable fallback order.
+
+        Fallback order:
+        1) exact resolution + preferred format
+        2) exact resolution + any format
+        3) best available resolution + preferred format
+        4) best available resolution + any format
+        """
+        local_assets: list[Asset] = [
+            c
+            for c in composite.children
+            if isinstance(c, Asset) and c.status == AssetStatus.LOCAL and c.local_path
+        ]
+        if not local_assets:
+            return None
+
+        wanted_format = preferred_format.lower().strip() if isinstance(
+            preferred_format, str) and preferred_format.strip() else None
+
+        def _format_matches(asset: Asset) -> bool:
+            if not wanted_format:
+                return True
+            return self._get_asset_format(asset) == wanted_format
+
+        if target_resolution:
+            exact = [
+                a
+                for a in local_assets
+                if isinstance(a.metadata, dict)
+                and a.metadata.get("resolution") == target_resolution
+            ]
+            if exact:
+                exact_with_format = [a for a in exact if _format_matches(a)]
+                if exact_with_format:
+                    return max(exact_with_format, key=self._resolution_key)
+                return max(exact, key=self._resolution_key)
+
+        preferred_any = [a for a in local_assets if _format_matches(a)]
+        if preferred_any:
+            return max(preferred_any, key=self._resolution_key)
+
+        return max(local_assets, key=self._resolution_key)
 
     def _get_asset_for_resolution(
         self, composite: CompositeAsset, target_resolution: str | None

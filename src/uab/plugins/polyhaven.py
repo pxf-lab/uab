@@ -7,7 +7,7 @@ as `CompositeAsset` trees:
   - `CompositeType.TEXTURE` children for each map type (diffuse, normal, etc.)
     - leaf `Asset` children per available resolution (1k, 2k, 4k, 8k)
 - HDRIs (`t=hdris`): `CompositeType.HDRI` (search result)
-  - leaf `Asset` children per available resolution (preferring `.hdr`)
+  - leaf `Asset` children per available resolution/format variant (`.hdr`, `.exr`)
 - Models (`t=models`): `CompositeType.MODEL` (search result)
   - leaf `Asset` children for available file formats/resolutions
 
@@ -35,6 +35,7 @@ API_FILES = f"{API_BASE}/files"  # /{id}
 
 AVAILABLE_RESOLUTIONS = ["1k", "2k", "4k", "8k"]
 DEFAULT_RESOLUTION = "2k"  # TODO: make this configurable
+DEFAULT_USE_EXR = False
 
 # prefer a single file per resolution
 _PREFERRED_TEXTURE_FORMATS = ["png", "jpg", "exr", "tif", "tiff"]
@@ -395,59 +396,65 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
             if not isinstance(res_data, dict):
                 continue
 
-            remote_url: str | None = None
-            file_size: int | None = None
-            chosen_fmt: str | None = None
+            # Keep deterministic ordering for UI and DB persistence:
+            # preferred formats first, then any remaining formats with URLs.
+            format_entries: list[tuple[str, dict[str, Any]]] = []
+            seen_formats: set[str] = set()
 
             for fmt in _PREFERRED_HDRI_FORMATS:
                 fmt_data = res_data.get(fmt)
                 if isinstance(fmt_data, dict) and fmt_data.get("url"):
-                    chosen_fmt = fmt
-                    remote_url = fmt_data.get("url")
-                    size_any = fmt_data.get(
-                        "size") or fmt_data.get("file_size")
-                    if isinstance(size_any, int):
-                        file_size = size_any
-                    break
+                    format_entries.append((fmt, fmt_data))
+                    seen_formats.add(fmt)
 
-            if not remote_url:
-                for fmt, fmt_data in res_data.items():
-                    if isinstance(fmt_data, dict) and fmt_data.get("url"):
-                        chosen_fmt = str(fmt)
-                        remote_url = fmt_data.get("url")
-                        size_any = fmt_data.get(
-                            "size") or fmt_data.get("file_size")
-                        if isinstance(size_any, int):
-                            file_size = size_any
-                        break
+            for fmt_any, fmt_data_any in res_data.items():
+                fmt = str(fmt_any).lower()
+                if fmt in seen_formats:
+                    continue
+                if isinstance(fmt_data_any, dict) and fmt_data_any.get("url"):
+                    format_entries.append((fmt, fmt_data_any))
+                    seen_formats.add(fmt)
 
-            if not remote_url or not chosen_fmt:
-                continue
+            for chosen_fmt, fmt_data in format_entries:
+                remote_url_any = fmt_data.get("url")
+                remote_url = remote_url_any if isinstance(
+                    remote_url_any, str) else None
+                if not remote_url:
+                    continue
 
-            asset_external_id = f"{hdri.external_id}:{resolution}:{chosen_fmt}"
-            filename = Path(remote_url.split("?", 1)[
-                            0]).name or asset_external_id
-            status, local_path = self._resolve_local_status_and_path(
-                asset_external_id=asset_external_id,
-                remote_url=remote_url,
-            )
-            child = Asset(
-                id=_stable_id(self.plugin_id, asset_external_id),
-                source=self.plugin_id,
-                external_id=asset_external_id,
-                name=filename,
-                asset_type=AssetType.HDRI,
-                status=status,
-                local_path=local_path,
-                remote_url=remote_url,
-                # propagate to all resolution/format variants
-                thumbnail_url=hdri.thumbnail_url,
-                thumbnail_path=hdri.thumbnail_path,
-                file_size=file_size,
-                metadata={"role": resolution,
-                          "resolution": resolution, "format": chosen_fmt},
-            )
-            children.append(child)
+                file_size: int | None = None
+                size_any = fmt_data.get("size") or fmt_data.get("file_size")
+                if isinstance(size_any, int):
+                    file_size = size_any
+
+                asset_external_id = f"{hdri.external_id}:{resolution}:{chosen_fmt}"
+                filename = Path(remote_url.split("?", 1)[
+                                0]).name or asset_external_id
+                status, local_path = self._resolve_local_status_and_path(
+                    asset_external_id=asset_external_id,
+                    remote_url=remote_url,
+                )
+                children.append(
+                    Asset(
+                        id=_stable_id(self.plugin_id, asset_external_id),
+                        source=self.plugin_id,
+                        external_id=asset_external_id,
+                        name=filename,
+                        asset_type=AssetType.HDRI,
+                        status=status,
+                        local_path=local_path,
+                        remote_url=remote_url,
+                        # propagate to all resolution/format variants
+                        thumbnail_url=hdri.thumbnail_url,
+                        thumbnail_path=hdri.thumbnail_path,
+                        file_size=file_size,
+                        metadata={
+                            "role": resolution,
+                            "resolution": resolution,
+                            "format": chosen_fmt,
+                        },
+                    )
+                )
 
         self._db.upsert_composite(hdri)
         self._db.set_composite_children(hdri.id, children)
@@ -596,15 +603,27 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
     def can_remove(self) -> bool:
         return False
 
-    def get_settings_schema(self, asset: Any) -> dict[str, Any] | None:
-        """Return resolution settings schema for bulk downloads."""
-        return {
-            "resolution": {
-                "type": "choice",
-                "options": AVAILABLE_RESOLUTIONS,
-                "default": DEFAULT_RESOLUTION,
+    def get_settings_schema(self, item: Any) -> dict[str, Any] | None:
+        """Return import settings schema (item-aware)."""
+        is_hdri = False
+        if isinstance(item, CompositeAsset):
+            is_hdri = item.composite_type == CompositeType.HDRI
+        elif isinstance(item, Asset):
+            is_hdri = item.asset_type == AssetType.HDRI
+
+        schema: dict[str, Any] = {}
+        if is_hdri:
+            schema["use_exr"] = {
+                "type": "bool",
+                "default": DEFAULT_USE_EXR,
             }
+
+        schema["resolution"] = {
+            "type": "choice",
+            "options": AVAILABLE_RESOLUTIONS,
+            "default": DEFAULT_RESOLUTION,
         }
+        return schema
 
     async def get_asset_info(self, external_id: str) -> dict[str, Any] | None:
         """Fetch detailed info for a specific PolyHaven asset ID."""

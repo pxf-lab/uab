@@ -213,6 +213,7 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             composite = self._db.get_composite_with_children(cid)
             if not composite:
                 continue
+            self._sort_hdri_variants_for_display(composite)
             propagate_preferred_thumbnail(composite)
             composite_roots.append(composite)
             for a in composite.get_all_assets():
@@ -549,9 +550,6 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             group_dir = str(asset.local_path.parent.resolve())
             by_group[(group_dir, basename)].append(asset)
 
-        # Prefer .hdr over .exr when resolution ties
-        format_preference = {"hdr": 0, "exr": 1}
-
         roots: list[CompositeAsset] = []
         grouped_asset_ids: set[str] = set()
 
@@ -559,20 +557,7 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             if len(children) < 2:
                 continue
 
-            children_sorted = sorted(
-                children,
-                key=lambda a: (
-                    -_resolution_sort_key(
-                        a.metadata.get("resolution") if isinstance(
-                            a.metadata, dict) else None
-                    ),
-                    format_preference.get(
-                        (a.metadata.get("format") if isinstance(
-                            a.metadata, dict) else None) or "", 99
-                    ),
-                    a.name.lower(),
-                ),
-            )
+            children_sorted = self._sort_hdri_assets(children)
 
             composite_external_id = f"{group_dir}::{basename}::hdri"
             roots.append(
@@ -591,6 +576,52 @@ class LocalLibraryPlugin(SharedAssetLibraryUtils):
             grouped_asset_ids.update(a.id for a in children)
 
         return roots, grouped_asset_ids
+
+    def _sort_hdri_assets(self, assets: list[Asset]) -> list[Asset]:
+        """Sort HDRI variants by resolution desc, then preferred format, then name."""
+        format_preference = {"hdr": 0, "exr": 1}
+
+        def _asset_format(asset: Asset) -> str:
+            if isinstance(asset.metadata, dict):
+                fmt_any = asset.metadata.get("format")
+                if isinstance(fmt_any, str) and fmt_any:
+                    return fmt_any.lower()
+            if asset.local_path:
+                suffix = asset.local_path.suffix.lower().lstrip(".")
+                if suffix:
+                    return suffix
+            return ""
+
+        return sorted(
+            assets,
+            key=lambda a: (
+                -_resolution_sort_key(
+                    a.metadata.get("resolution") if isinstance(
+                        a.metadata, dict) else None
+                ),
+                format_preference.get(_asset_format(a), 99),
+                a.name.lower(),
+            ),
+        )
+
+    def _sort_hdri_variants_for_display(self, composite: CompositeAsset) -> None:
+        """
+        Normalize HDRI variant ordering recursively for stable local detail display.
+
+        This applies to composites loaded from DB (including non-local sources).
+        """
+        if (
+            composite.composite_type == CompositeType.HDRI
+            and composite.children
+            and all(isinstance(c, Asset) for c in composite.children)
+        ):
+            hdri_assets = [c for c in composite.children if isinstance(c, Asset)]
+            composite.children = self._sort_hdri_assets(hdri_assets)
+            return
+
+        for child in composite.children:
+            if isinstance(child, CompositeAsset):
+                self._sort_hdri_variants_for_display(child)
 
     def _group_model_assets(self, assets: list[Asset]) -> tuple[list[CompositeAsset], set[str]]:
         """
