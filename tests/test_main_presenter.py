@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from uab.core.interfaces import AssetLibraryPlugin, HostIntegration
+from uab.core.preferences import HdriQuickImportPreferences, UserPreferences
 from uab.core.models import StandardAsset, AssetStatus, AssetType
 
 
@@ -175,6 +178,90 @@ class TestMainPresenterInit:
             assert "test_plugin" in call_args
             assert call_args["test_plugin"] == "Test Plugin"
 
+    def test_presenter_registers_settings_tab_with_loaded_preferences(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        """Settings tab should be created and initialized from persisted prefs."""
+        from uab.presenters.main_presenter import MainPresenter
+
+        settings_tab_instance = MagicMock()
+        settings_tab_instance.hdri_quick_import_changed = MagicMock()
+        settings_tab_instance.hdri_quick_import_changed.connect = MagicMock()
+
+        settings_module = ModuleType("uab.ui.settings_tab")
+        settings_module.SettingsTab = MagicMock(return_value=settings_tab_instance)
+
+        mock_view.add_settings_tab = MagicMock(return_value=0)
+
+        loaded_prefs = UserPreferences(
+            hdri_quick_import=HdriQuickImportPreferences(
+                resolution="4k",
+                file_type="exr",
+            )
+        )
+
+        with patch.dict(sys.modules, {"uab.ui.settings_tab": settings_module}), patch(
+            "uab.presenters.main_presenter.PreferencesStore"
+        ) as mock_store_cls, patch.object(MainPresenter, "_create_default_tab"):
+            mock_store = mock_store_cls.return_value
+            mock_store.load.return_value = loaded_prefs
+
+            MainPresenter(view=mock_view, host=mock_host)
+
+            mock_view.add_settings_tab.assert_called_once_with(
+                settings_tab_instance,
+                "Settings",
+            )
+            settings_tab_instance.set_hdri_quick_import_preferences.assert_called_once_with(
+                resolution="4k",
+                file_type="exr",
+            )
+            settings_tab_instance.hdri_quick_import_changed.connect.assert_called_once()
+
+    def test_settings_change_updates_preferences_store(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        """Settings signal handler should persist and refresh presenter prefs."""
+        from uab.presenters.main_presenter import MainPresenter
+
+        settings_tab_instance = MagicMock()
+        settings_tab_instance.hdri_quick_import_changed = MagicMock()
+        settings_tab_instance.hdri_quick_import_changed.connect = MagicMock()
+
+        settings_module = ModuleType("uab.ui.settings_tab")
+        settings_module.SettingsTab = MagicMock(return_value=settings_tab_instance)
+
+        initial_prefs = UserPreferences(
+            hdri_quick_import=HdriQuickImportPreferences(
+                resolution="2k",
+                file_type="hdr",
+            )
+        )
+        updated_prefs = UserPreferences(
+            hdri_quick_import=HdriQuickImportPreferences(
+                resolution="1k",
+                file_type="exr",
+            )
+        )
+
+        with patch.dict(sys.modules, {"uab.ui.settings_tab": settings_module}), patch(
+            "uab.presenters.main_presenter.PreferencesStore"
+        ) as mock_store_cls, patch.object(MainPresenter, "_create_default_tab"):
+            mock_store = mock_store_cls.return_value
+            mock_store.load.return_value = initial_prefs
+            mock_store.update_hdri_quick_import.return_value = updated_prefs
+
+            presenter = MainPresenter(view=mock_view, host=mock_host)
+            presenter._on_hdri_quick_import_changed("1k", "exr")
+
+            mock_store.update_hdri_quick_import.assert_called_once_with(
+                resolution="1k",
+                file_type="exr",
+            )
+            current = presenter._get_user_preferences()
+            assert current.hdri_quick_import.resolution == "1k"
+            assert current.hdri_quick_import.file_type == "exr"
+
 
 class TestMainPresenterPluginDiscovery:
     """Tests for plugin discovery."""
@@ -331,10 +418,15 @@ class TestMainPresenterTabManagement:
             kwargs = mock_tab_presenter.call_args.kwargs
             resolver = kwargs.get("get_plugin_by_source")
             assert callable(resolver)
+            prefs_provider = kwargs.get("get_user_preferences")
+            assert callable(prefs_provider)
 
             plugin = presenter.plugins["test_plugin"]
             assert resolver("test_plugin") is plugin
             assert resolver("missing_plugin") is None
+            prefs = prefs_provider()
+            assert prefs.hdri_quick_import.resolution in {"1k", "2k", "4k", "8k"}
+            assert prefs.hdri_quick_import.file_type in {"hdr", "exr"}
 
     def test_create_tab_disables_import_ui_for_standalone_host(
         self, mock_view: MagicMock
