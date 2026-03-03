@@ -706,7 +706,7 @@ class BrowserView(QWidget):
     remove_requested = Signal(str)  # item_id
     add_files_requested = Signal()  # request to add individual files
     add_folder_requested = Signal()  # request to add folder
-    # asset_id - create new node (Cmd/Ctrl+Click)
+    # item_id - create new node (Cmd/Ctrl+Click)
     new_asset_requested = Signal(str)
     # asset_id - replace selected node (Opt/Alt+Click)
     replace_asset_requested = Signal(str)
@@ -1248,25 +1248,38 @@ class BrowserView(QWidget):
         if not item:
             return False
 
-        # Only handle local assets (can't create/replace with cloud assets directly)
-        if not isinstance(item, (Asset, StandardAsset)):
-            return False
-        if item.status != AssetStatus.LOCAL:
-            return False
+        can_quick_new = False
+        can_quick_replace = False
+
+        # Leaf assets: quick new/replace when local.
+        if isinstance(item, (Asset, StandardAsset)):
+            is_local = item.status == AssetStatus.LOCAL
+            can_quick_new = is_local
+            can_quick_replace = is_local
+
+        # HDRI composites: quick new when any local descendants are available.
+        elif isinstance(item, CompositeAsset):
+            can_quick_new = (
+                item.composite_type == CompositeType.HDRI and item.has_local_children
+            )
 
         # Qt swaps Ctrl/Meta on macOS by default, so ControlModifier maps to:
         # - macOS: Command key (⌘)
         # - Windows/Linux: Ctrl key
         # This gives us consistent cross-platform behavior.
 
-        # Cmd/Ctrl+Click: New asset
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
+        # Cmd/Ctrl+Click: Quick import with defaults.
+        if modifiers & Qt.KeyboardModifier.ControlModifier and can_quick_new:
             self._delegate.hide_preview()
             self.new_asset_requested.emit(item.id)
             return True
 
-        # Opt/Alt+Click: Replace asset (only if enabled)
-        if modifiers & Qt.KeyboardModifier.AltModifier and self._replace_enabled:
+        # Opt/Alt+Click: Replace (leaf assets only, and only if enabled).
+        if (
+            modifiers & Qt.KeyboardModifier.AltModifier
+            and self._replace_enabled
+            and can_quick_replace
+        ):
             self._delegate.hide_preview()
             self.replace_asset_requested.emit(item.id)
             return True
