@@ -31,6 +31,7 @@ from uab.ui.utils import ThumbnailLoaderBase
 if TYPE_CHECKING:
     from pathlib import Path
     from uab.core.interfaces import AssetLibraryPlugin, HostIntegration
+    from uab.core.preferences import UserPreferences
     from uab.ui.browser import BrowserView
 
 logger = logging.getLogger(__name__)
@@ -248,6 +249,7 @@ class TabPresenter(QObject):
         view: BrowserView,
         host: HostIntegration,
         get_plugin_by_source: Callable[[str], AssetLibraryPlugin | None] | None = None,
+        get_user_preferences: Callable[[], UserPreferences] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -256,6 +258,7 @@ class TabPresenter(QObject):
         self._view = view
         self._host = host
         self._get_plugin_by_source = get_plugin_by_source
+        self._get_user_preferences = get_user_preferences
 
         self._current_task: asyncio.Task | None = None
 

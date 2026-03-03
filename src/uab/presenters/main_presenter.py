@@ -15,6 +15,7 @@ import pkgutil
 from typing import TYPE_CHECKING
 
 from uab.core.interfaces import AssetLibraryPlugin
+from uab.core.preferences import PreferencesStore, UserPreferences
 
 if TYPE_CHECKING:
     from uab.core.interfaces import HostIntegration
@@ -58,10 +59,16 @@ class MainPresenter:
         # Maps plugin_id to instantiated plugin
         self._plugins: dict[str, AssetLibraryPlugin] = {}
 
+        # Persistent user preferences (used by settings + quick import defaults)
+        self._preferences_store = PreferencesStore()
+        self._preferences: UserPreferences = self._preferences_store.load()
+        self._settings_tab = None
+
         # Initialize
         self._discover_plugins()
         self._setup_connections()
         self._populate_menus()
+        self._create_settings_tab()
 
         # Optionally create a default tab
         self._create_default_tab()
@@ -120,6 +127,58 @@ class MainPresenter:
         default_plugin_id = "local" if "local" in self._plugins else next(
             iter(self._plugins))
         self.create_tab(default_plugin_id)
+
+    def _create_settings_tab(self) -> None:
+        """Create and wire the persistent Settings tab."""
+        try:
+            from uab.ui.settings_tab import SettingsTab
+        except Exception as e:
+            logger.warning(f"Failed to import SettingsTab: {e}")
+            return
+
+        try:
+            settings_tab = SettingsTab()
+            hdri = self._preferences.hdri_quick_import
+            settings_tab.set_hdri_quick_import_preferences(
+                resolution=hdri.resolution,
+                file_type=hdri.file_type,
+            )
+            settings_tab.hdri_quick_import_changed.connect(
+                self._on_hdri_quick_import_changed
+            )
+            self._settings_tab = settings_tab
+
+            add_settings_tab = getattr(self._view, "add_settings_tab", None)
+            if callable(add_settings_tab):
+                add_settings_tab(settings_tab, "Settings")
+                return
+
+            # Backward-compatible fallback for views without add_settings_tab().
+            try:
+                self._view.add_tab(settings_tab, "Settings", closable=False)
+            except TypeError:
+                self._view.add_tab(settings_tab, "Settings")
+        except Exception as e:
+            logger.warning(f"Failed to create settings tab: {e}")
+
+    def _on_hdri_quick_import_changed(self, resolution: str, file_type: str) -> None:
+        """Persist updated HDRI quick-import preferences from the Settings tab."""
+        try:
+            self._preferences = self._preferences_store.update_hdri_quick_import(
+                resolution=resolution,
+                file_type=file_type,
+            )
+            logger.debug(
+                "Saved HDRI quick import prefs: resolution=%s, file_type=%s",
+                self._preferences.hdri_quick_import.resolution,
+                self._preferences.hdri_quick_import.file_type,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save HDRI quick import settings: {e}")
+
+    def _get_user_preferences(self) -> UserPreferences:
+        """Return the latest in-memory user preferences snapshot."""
+        return self._preferences
 
     # TAB MANAGEMENT
 
@@ -225,6 +284,7 @@ class MainPresenter:
             view=view,
             host=self._host,
             get_plugin_by_source=self._plugins.get,
+            get_user_preferences=self._get_user_preferences,
         )
 
         tab_presenter.status_message.connect(self._view.set_status)
