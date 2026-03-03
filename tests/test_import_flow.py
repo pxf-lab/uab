@@ -443,11 +443,12 @@ def test_import_hdri_composite_narrows_variants_for_karma_renderer(
     integration._import_hdri_composite(hdri, {"renderer": "karma", "resolution": "2k"})
 
     assert strategy.hdri_calls
-    passed_composite, _passed_options = strategy.hdri_calls[0]
+    passed_composite, passed_options = strategy.hdri_calls[0]
     assert len(passed_composite.children) == 1
     child = passed_composite.children[0]
     assert isinstance(child, Asset)
     assert child.id == hdr_2k.id
+    assert passed_options["_imported_hdri_resolution"] == "2k"
 
 
 def test_import_hdri_composite_narrows_variants_for_non_karma_renderer(
@@ -520,11 +521,12 @@ def test_import_hdri_composite_prompt_uses_user_choice(
     )
 
     assert strategy.hdri_calls
-    passed_composite, _passed_options = strategy.hdri_calls[0]
+    passed_composite, passed_options = strategy.hdri_calls[0]
     assert len(passed_composite.children) == 1
     child = passed_composite.children[0]
     assert isinstance(child, Asset)
     assert child.id == exr_4k.id
+    assert passed_options["_imported_hdri_resolution"] == "4k"
 
 
 def test_normalize_texture_keys_handles_variants(tmp_path: Path) -> None:

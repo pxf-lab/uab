@@ -28,6 +28,7 @@ class MockHostIntegration(HostIntegration):
         self.imported_assets: list[tuple[StandardAsset, dict[str, Any]]] = []
         self.imported_composites: list[tuple[CompositeAsset, dict[str, Any]]] = [
         ]
+        self.effective_hdri_resolution: str | None = None
 
     @property
     def uab_supported_renderers(self) -> list[str]:
@@ -37,6 +38,11 @@ class MockHostIntegration(HostIntegration):
         self.imported_assets.append((asset, options))
 
     def import_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:  # noqa: ANN401
+        if (
+            composite.composite_type == CompositeType.HDRI
+            and isinstance(self.effective_hdri_resolution, str)
+        ):
+            options["_imported_hdri_resolution"] = self.effective_hdri_resolution
         self.imported_composites.append((composite, options))
         return None
 
@@ -658,3 +664,62 @@ class TestTabPresenterQuickImportPreferences:
         _asset, options = mock_host.imported_assets[0]
         assert options["resolution"] == "2k"
         assert options["renderer"] == "arnold"
+
+    def test_quick_import_hdri_emits_status_warning_for_resolution_fallback(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
+    ) -> None:
+        from uab.presenters.tab_presenter import TabPresenter
+
+        leaf = Asset(
+            id="polyhaven-overcast:2k:hdr",
+            source="polyhaven",
+            external_id="overcast:2k:hdr",
+            name="overcast_2k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.LOCAL,
+            local_path=tmp_path / "overcast_2k.hdr",
+            metadata={"resolution": "2k", "format": "hdr"},
+        )
+        hdri = CompositeAsset(
+            id="polyhaven-overcast",
+            source="polyhaven",
+            external_id="overcast",
+            name="Overcast",
+            composite_type=CompositeType.HDRI,
+            children=[leaf],
+        )
+
+        plugin = PresenterTestPlugin(items=[hdri])
+        plugin.get_settings_schema = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "resolution": {
+                    "type": "choice",
+                    "options": ["1k", "2k", "4k"],
+                    "default": "2k",
+                },
+                "use_exr": {"type": "bool", "default": False},
+            }
+        )
+
+        prefs = UserPreferences(
+            hdri_quick_import=HdriQuickImportPreferences(
+                resolution="4k",
+                file_type="hdr",
+            )
+        )
+        mock_host.effective_hdri_resolution = "2k"
+
+        presenter = TabPresenter(
+            plugin=plugin,
+            view=mock_view,
+            host=mock_host,
+            get_user_preferences=lambda: prefs,
+        )
+        asyncio.run(presenter._do_search(""))
+
+        messages: list[str] = []
+        presenter.status_message.connect(lambda m: messages.append(m))
+        presenter._on_new_asset_requested(hdri.id)
+
+        assert messages
+        assert "Preferred HDRI resolution 4k was not available; used 2k." in messages[-1]
