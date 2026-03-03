@@ -24,7 +24,20 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core.interfaces import Browsable, SupportsLocalImport
-from uab.core.models import Asset, AssetStatus, AssetType, CompositeAsset, StandardAsset
+from uab.core.models import (
+    Asset,
+    AssetStatus,
+    AssetType,
+    CompositeAsset,
+    CompositeType,
+    StandardAsset,
+)
+from uab.core.preferences import (
+    DEFAULT_HDRI_FILE_TYPE,
+    DEFAULT_HDRI_RESOLUTION,
+    normalize_hdri_file_type,
+    normalize_hdri_resolution,
+)
 from uab.core.thumbnails import propagate_preferred_thumbnail
 from uab.ui.utils import ThumbnailLoaderBase
 
@@ -642,10 +655,16 @@ class TabPresenter(QObject):
         """
         Handle new asset request (Cmd/Ctrl+Click in context menu).
 
-        Creates a new node for the asset. This is functionally the same
-        as import but with explicit naming for the context menu action.
+        Quick-import path:
+        - bypasses the import settings dialog
+        - applies default schema values
+        - applies HDRI quick-import preferences (resolution + file type)
         """
-        self._on_import_requested(asset_id)
+        item = self._item_cache.get(asset_id)
+        if not item:
+            logger.warning(f"Item not found for quick import: {asset_id}")
+            return
+        self._run_async(self._do_import(item, quick_import=True))
 
     @Slot(str)
     def _on_replace_asset_requested(self, asset_id: str) -> None:
@@ -673,7 +692,98 @@ class TabPresenter(QObject):
             logger.error(f"Replace failed: {e}")
             self.status_message.emit(f"Replace failed: {e}")
 
-    async def _do_import(self, item: Browsable) -> None:
+    def _is_hdri_item(self, item: Browsable) -> bool:
+        """Return True when a browsable item represents an HDRI import target."""
+        if isinstance(item, CompositeAsset):
+            return item.composite_type == CompositeType.HDRI
+        if isinstance(item, Asset):
+            return item.asset_type == AssetType.HDRI
+        if isinstance(item, StandardAsset):
+            return item.type == AssetType.HDRI
+        return False
+
+    def _schema_defaults_to_options(self, schema: dict[str, Any]) -> dict[str, Any]:
+        """Build options from a schema's default values without prompting."""
+        options: dict[str, Any] = {}
+        for key, config_any in schema.items():
+            config = config_any if isinstance(config_any, dict) else {}
+
+            if "default" in config:
+                options[key] = config.get("default")
+                continue
+
+            field_type = config.get("type", "text")
+            if field_type == "choice":
+                choice_options = config.get("options", [])
+                if isinstance(choice_options, list) and choice_options:
+                    options[key] = choice_options[0]
+            elif field_type == "bool":
+                options[key] = False
+            else:
+                options[key] = ""
+        return options
+
+    def _get_hdri_quick_import_defaults(self) -> tuple[str, bool]:
+        """Return validated HDRI quick-import defaults from user preferences."""
+        resolution = DEFAULT_HDRI_RESOLUTION
+        use_exr = DEFAULT_HDRI_FILE_TYPE == "exr"
+
+        if self._get_user_preferences is None:
+            return resolution, use_exr
+
+        try:
+            prefs = self._get_user_preferences()
+            hdri_prefs = getattr(prefs, "hdri_quick_import", None)
+            if hdri_prefs is None:
+                return resolution, use_exr
+
+            res_any = getattr(hdri_prefs, "resolution", None)
+            if isinstance(res_any, str):
+                resolution = normalize_hdri_resolution(res_any)
+
+            file_type_any = getattr(hdri_prefs, "file_type", None)
+            if isinstance(file_type_any, str):
+                use_exr = normalize_hdri_file_type(file_type_any) == "exr"
+            else:
+                use_exr_any = getattr(hdri_prefs, "use_exr", None)
+                if isinstance(use_exr_any, bool):
+                    use_exr = use_exr_any
+        except Exception as e:
+            logger.debug("Failed to read user preferences for quick import: %s", e)
+
+        return resolution, use_exr
+
+    def _resolve_import_options(
+        self,
+        item: Browsable,
+        schema: dict[str, Any] | None,
+        *,
+        quick_import: bool,
+    ) -> dict[str, Any] | None:
+        """
+        Resolve import options for manual vs quick import.
+
+        Returns:
+            Dict of options, or None when the user cancels a manual import dialog.
+        """
+        options: dict[str, Any] = {}
+
+        if schema:
+            if quick_import:
+                options = self._schema_defaults_to_options(schema)
+            else:
+                options = self._show_settings_dialog(schema, item)
+                if options is None:
+                    return None
+
+        if quick_import and self._is_hdri_item(item):
+            resolution, use_exr = self._get_hdri_quick_import_defaults()
+            options["resolution"] = resolution
+            options["use_exr"] = use_exr
+
+        return options
+
+    async def _do_import(self, item: Browsable, *, quick_import: bool = False) -> None:
         """Execute import asynchronously (asset or composite)."""
         try:
             if isinstance(item, CompositeAsset):
@@ -685,12 +795,14 @@ class TabPresenter(QObject):
                     self._index_composite_tree(item)
 
                 schema = self._get_import_settings_schema(item)
-                options: dict[str, Any] = {}
-                if schema:
-                    options = self._show_settings_dialog(schema, item)
-                    if options is None:
-                        logger.info("Import cancelled by user")
-                        return
+                options = self._resolve_import_options(
+                    item,
+                    schema,
+                    quick_import=quick_import,
+                )
+                if options is None:
+                    logger.info("Import cancelled by user")
+                    return
                 options["renderer"] = self._view.get_selected_renderer()
 
                 self.status_message.emit(f"Importing {item.name}...")
@@ -713,14 +825,15 @@ class TabPresenter(QObject):
                     return
 
             schema = self._get_import_settings_schema(asset_item)
-            options: dict[str, Any] = {}
-
-            if schema:
-                options = self._show_settings_dialog(schema, asset_item)
-                if options is None:
-                    # User cancelled
-                    logger.info("Import cancelled by user")
-                    return
+            options = self._resolve_import_options(
+                asset_item,
+                schema,
+                quick_import=quick_import,
+            )
+            if options is None:
+                # User cancelled
+                logger.info("Import cancelled by user")
+                return
 
             options["renderer"] = self._view.get_selected_renderer()
 
