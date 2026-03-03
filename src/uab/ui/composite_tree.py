@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core.models import Asset, AssetStatus, CompositeAsset, StandardAsset
+from uab.core.tree_sections import FormatSection, group_leaf_children_by_format
 from uab.ui.delegates import AssetStatusBadge
 
 
@@ -28,6 +29,7 @@ class TreeDataRole(IntEnum):
     STATUS = ITEM + 2
     IS_COMPOSITE = ITEM + 3
     ROLE_LABEL = ITEM + 4
+    IS_SECTION = ITEM + 5
 
 
 @dataclass
@@ -118,8 +120,10 @@ class CompositeTreeModel(QAbstractItemModel):
             self._root_composite = composite
             self._root_node.children.clear()
             self._node_by_id.clear()
+            grouped_children = group_leaf_children_by_format(composite.children)
             self._root_node.children = [
-                self._build_node(child, parent=self._root_node) for child in composite.children
+                self._build_node(child, parent=self._root_node)
+                for child in grouped_children
             ]
         finally:
             self.endResetModel()
@@ -140,8 +144,14 @@ class CompositeTreeModel(QAbstractItemModel):
             self._node_by_id[item_id] = node
 
         if isinstance(item, CompositeAsset):
-            node.children = [self._build_node(
-                child, parent=node) for child in item.children]
+            grouped_children = group_leaf_children_by_format(item.children)
+            node.children = [
+                self._build_node(child, parent=node) for child in grouped_children
+            ]
+        elif isinstance(item, FormatSection):
+            node.children = [
+                self._build_node(child, parent=node) for child in item.children
+            ]
         else:
             node.children = []
         return node
@@ -179,8 +189,11 @@ class CompositeTreeModel(QAbstractItemModel):
 
     def hasChildren(self, parent: QModelIndex = QModelIndex()) -> bool:  # noqa: N802
         node = self._node_from_index(parent)
+        if node.children:
+            return True
+
         if node is self._root_node:
-            return len(node.children) > 0
+            return False
         item = node.item
         if isinstance(item, CompositeAsset):
             # Show an expander for composites even when children are lazily loaded.
@@ -201,19 +214,30 @@ class CompositeTreeModel(QAbstractItemModel):
         if role == int(TreeDataRole.ITEM):
             return item
         if role == int(TreeDataRole.ITEM_ID):
+            if isinstance(item, FormatSection):
+                return ""
             return getattr(item, "id", "")
         if role == int(TreeDataRole.STATUS):
+            if isinstance(item, FormatSection):
+                return None
             return getattr(item, "display_status", AssetStatus.CLOUD)
         if role == int(TreeDataRole.IS_COMPOSITE):
             return isinstance(item, CompositeAsset)
         if role == int(TreeDataRole.ROLE_LABEL):
+            if isinstance(item, FormatSection):
+                return ""
             return _role_label_from_metadata(item)
+        if role == int(TreeDataRole.IS_SECTION):
+            return isinstance(item, FormatSection)
 
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:  # noqa: N802
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
+        node = self._node_from_index(index)
+        if isinstance(node.item, FormatSection):
+            return Qt.ItemFlag.ItemIsEnabled
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
     # Helpers
@@ -262,7 +286,8 @@ class CompositeTreeView(QTreeView):
         self.setHeaderHidden(True)
         self.setUniformRowHeights(True)
         self.setAnimated(True)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setIndentation(18)
         self.setRootIsDecorated(True)
         self.setExpandsOnDoubleClick(True)
@@ -316,6 +341,25 @@ class TreeItemDelegate(QStyledItemDelegate):
 
         item = index.data(int(TreeDataRole.ITEM))
         if item is None:
+            painter.restore()
+            return
+
+        is_section = bool(index.data(int(TreeDataRole.IS_SECTION)))
+        if is_section:
+            section_name = getattr(item, "name", "")
+            section_font = QFont(painter.font())
+            section_font.setPointSize(9)
+            section_font.setBold(True)
+            painter.setFont(section_font)
+            painter.setPen(self._COLOR_MUTED)
+            painter.drawText(
+                rect.x() + 10,
+                rect.y(),
+                max(0, rect.width() - 16),
+                rect.height(),
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                str(section_name),
+            )
             painter.restore()
             return
 
@@ -401,7 +445,8 @@ class TreeItemDelegate(QStyledItemDelegate):
             elided_role = label_metrics.elidedText(
                 role_label, Qt.TextElideMode.ElideLeft, label_max_w
             )
-            label_w = min(label_max_w, label_metrics.horizontalAdvance(elided_role))
+            label_w = min(
+                label_max_w, label_metrics.horizontalAdvance(elided_role))
             gap = 10
             name_right_limit = max(x, right_limit - label_w - gap)
 
