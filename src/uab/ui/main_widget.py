@@ -72,6 +72,8 @@ class MainWidget(QWidget):
 
         # Presenter is created lazily via initialize()
         self._presenter: MainPresenter | None = None
+        self._pinned_tabs: set[int] = set()
+        self._settings_tab_index: int | None = None
 
         self._load_stylesheet()
 
@@ -162,13 +164,14 @@ class MainWidget(QWidget):
                     pid)
             )
 
-    def add_tab(self, widget: QWidget, title: str) -> int:
+    def add_tab(self, widget: QWidget, title: str, *, closable: bool = True) -> int:
         """
         Add a new tab with the given widget.
 
         Args:
             widget: The widget to add as tab content
             title: The tab title
+            closable: Whether this tab should be user-closable
 
         Returns:
             The index of the new tab
@@ -176,15 +179,42 @@ class MainWidget(QWidget):
         index = self._tab_widget.addTab(widget, title)
         self._tab_widget.setCurrentIndex(index)
 
-        # Add custom close button
-        close_btn = self._create_close_button(index)
-        self._tab_widget.tabBar().setTabButton(
-            index, QTabBar.ButtonPosition.RightSide, close_btn
-        )
+        tab_bar = self._tab_widget.tabBar()
+        if closable:
+            close_btn = self._create_close_button()
+            tab_bar.setTabButton(
+                index, QTabBar.ButtonPosition.RightSide, close_btn
+            )
+            self._pinned_tabs.discard(index)
+        else:
+            # Pinned tabs (e.g. Settings) should not show a close button.
+            tab_bar.setTabButton(index, QTabBar.ButtonPosition.RightSide, None)
+            self._pinned_tabs.add(index)
 
         return index
 
-    def _create_close_button(self, tab_index: int) -> QPushButton:
+    def add_settings_tab(self, widget: QWidget, title: str = "Settings") -> int:
+        """
+        Add the persistent Settings tab (single instance, non-closable).
+
+        Args:
+            widget: The settings widget instance
+            title: Tab title (defaults to "Settings")
+
+        Returns:
+            The settings tab index
+        """
+        if self._settings_tab_index is not None:
+            count = self._tab_widget.count()
+            if 0 <= self._settings_tab_index < count:
+                self._tab_widget.setCurrentIndex(self._settings_tab_index)
+                return self._settings_tab_index
+
+        index = self.add_tab(widget, title, closable=False)
+        self._settings_tab_index = index
+        return index
+
+    def _create_close_button(self) -> QPushButton:
         """Create a custom close button for a tab."""
         btn = QPushButton("×")
         btn.setObjectName("tabCloseButton")
@@ -210,6 +240,26 @@ class MainWidget(QWidget):
             index: The tab index to remove
         """
         self._tab_widget.removeTab(index)
+        self._reindex_special_tabs(removed_index=index)
+
+    def is_tab_pinned(self, index: int) -> bool:
+        """Return True if a tab is pinned (non-closable)."""
+        return index in self._pinned_tabs
+
+    def _reindex_special_tabs(self, removed_index: int) -> None:
+        """Reindex pinned/settings tab indices after a tab removal."""
+        self._pinned_tabs = {
+            idx - 1 if idx > removed_index else idx
+            for idx in self._pinned_tabs
+            if idx != removed_index
+        }
+
+        if self._settings_tab_index is None:
+            return
+        if self._settings_tab_index == removed_index:
+            self._settings_tab_index = None
+        elif self._settings_tab_index > removed_index:
+            self._settings_tab_index -= 1
 
     def set_status(self, message: str, timeout: int = 5000) -> None:
         """
@@ -231,12 +281,14 @@ class MainWidget(QWidget):
 
     def _on_tab_close_requested(self, index: int) -> None:
         """Handle tab close button click."""
+        if self.is_tab_pinned(index):
+            return
         self.tab_closed.emit(index)
 
     def _close_current_tab(self) -> None:
         """Close the currently active tab."""
         index = self._tab_widget.currentIndex()
-        if index >= 0:
+        if index >= 0 and not self.is_tab_pinned(index):
             self.tab_closed.emit(index)
 
     def _on_new_tab_clicked(self) -> None:
