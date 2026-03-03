@@ -178,10 +178,25 @@ class TestMainPresenterInit:
             assert "test_plugin" in call_args
             assert call_args["test_plugin"] == "Test Plugin"
 
+    def test_presenter_populates_menu_with_settings_entry(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration
+    ) -> None:
+        """New Tab menu should include an entry for Settings."""
+        AssetLibraryPlugin._implementations["test_plugin"] = TestPlugin
+
+        with patch("uab.ui.browser.BrowserView"):
+            from uab.presenters.main_presenter import MainPresenter
+
+            MainPresenter(view=mock_view, host=mock_host)
+
+            call_args = mock_view.populate_new_tab_menu.call_args[0][0]
+            assert MainPresenter._SETTINGS_TAB_ID in call_args
+            assert call_args[MainPresenter._SETTINGS_TAB_ID] == "Settings"
+
     def test_presenter_registers_settings_tab_with_loaded_preferences(
         self, mock_view: MagicMock, mock_host: MockHostIntegration
     ) -> None:
-        """Settings tab should be created and initialized from persisted prefs."""
+        """Settings tab should be addable and initialized from persisted prefs."""
         from uab.presenters.main_presenter import MainPresenter
 
         settings_tab_instance = MagicMock()
@@ -206,7 +221,8 @@ class TestMainPresenterInit:
             mock_store = mock_store_cls.return_value
             mock_store.load.return_value = loaded_prefs
 
-            MainPresenter(view=mock_view, host=mock_host)
+            presenter = MainPresenter(view=mock_view, host=mock_host)
+            presenter.create_tab(MainPresenter._SETTINGS_TAB_ID)
 
             mock_view.add_settings_tab.assert_called_once_with(
                 settings_tab_instance,
