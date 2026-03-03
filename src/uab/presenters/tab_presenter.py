@@ -681,7 +681,7 @@ class TabPresenter(QObject):
                     self._replace_current_item(item)
                     self._index_composite_tree(item)
 
-                schema = self._plugin.get_settings_schema(item)
+                schema = self._get_import_settings_schema(item)
                 options: dict[str, Any] = {}
                 if schema:
                     options = self._show_settings_dialog(schema, item)
@@ -709,8 +709,7 @@ class TabPresenter(QObject):
                         "Download failed, import cancelled")
                     return
 
-            schema = self._plugin.get_settings_schema(
-                asset_item)  # type: ignore[arg-type]
+            schema = self._get_import_settings_schema(asset_item)
             options: dict[str, Any] = {}
 
             if schema:
@@ -889,6 +888,39 @@ class TabPresenter(QObject):
 
         # Fallback for items without a valid source field.
         return self._plugin if self._plugin.can_download else None
+
+    def _resolve_schema_plugin(self, item: Browsable) -> AssetLibraryPlugin:
+        """
+        Resolve which plugin should provide import settings schema for this item.
+
+        In mixed-source views (notably Local Library), import settings should come
+        from the item's source plugin when available.
+        """
+        source = getattr(item, "source", None)
+
+        if isinstance(source, str) and source and source == self._plugin.plugin_id:
+            return self._plugin
+
+        if isinstance(source, str) and source and self._get_plugin_by_source is not None:
+            try:
+                source_plugin = self._get_plugin_by_source(source)
+            except Exception as e:
+                logger.debug(
+                    "Failed to resolve schema plugin for source '%s': %s", source, e
+                )
+                source_plugin = None
+            if source_plugin is not None:
+                return source_plugin
+
+        return self._plugin
+
+    def _get_import_settings_schema(self, item: Browsable) -> dict[str, Any] | None:
+        """Return import settings schema for an item, with source-plugin fallback."""
+        schema_plugin = self._resolve_schema_plugin(item)
+        schema = schema_plugin.get_settings_schema(item)
+        if schema is None and schema_plugin is not self._plugin:
+            return self._plugin.get_settings_schema(item)
+        return schema
 
     async def _do_download_asset(self, asset_id: str) -> None:
         """Execute a single-asset download asynchronously."""

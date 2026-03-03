@@ -17,6 +17,7 @@ API Documentation: https://github.com/Poly-Haven/Public-API
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -603,6 +604,56 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
     def can_remove(self) -> bool:
         return False
 
+    def _parse_resolution_value(self, value: str) -> int:
+        """Return a numeric resolution score for stable sorting/defaults."""
+        v = value.strip().lower().replace(" ", "")
+        m = re.match(r"^(?P<num>\d+)k$", v)
+        if m:
+            return int(m.group("num")) * 1000
+        m = re.match(r"^(?P<num>\d+)(?:px|p)?$", v)
+        if m:
+            return int(m.group("num"))
+        return -1
+
+    def _collect_local_resolution_options(self, item: Any) -> list[str]:
+        """Collect available local resolution labels from an item tree."""
+        local_assets: list[Asset] = []
+        if isinstance(item, Asset):
+            if item.status == AssetStatus.LOCAL:
+                local_assets = [item]
+        elif isinstance(item, CompositeAsset):
+            local_assets = [
+                a for a in item.get_all_assets() if a.status == AssetStatus.LOCAL
+            ]
+
+        values: set[str] = set()
+        for asset in local_assets:
+            meta = asset.metadata if isinstance(asset.metadata, dict) else {}
+            resolution_any = meta.get("resolution")
+            if isinstance(resolution_any, str) and resolution_any:
+                values.add(resolution_any)
+
+        def _sort_key(value: str) -> tuple[bool, int, str]:
+            parsed = self._parse_resolution_value(value)
+            numeric = parsed if parsed >= 0 else 0
+            return (parsed < 0, numeric, value.lower())
+
+        return sorted(
+            values,
+            key=_sort_key,
+        )
+
+    def _default_resolution_for_options(self, options: list[str]) -> str:
+        """Pick the best default from available options."""
+        if DEFAULT_RESOLUTION in options:
+            return DEFAULT_RESOLUTION
+        if not options:
+            return DEFAULT_RESOLUTION
+        return max(
+            options,
+            key=lambda val: (self._parse_resolution_value(val), val.lower()),
+        )
+
     def get_settings_schema(self, item: Any) -> dict[str, Any] | None:
         """Return import settings schema (item-aware)."""
         is_hdri = False
@@ -610,6 +661,10 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
             is_hdri = item.composite_type == CompositeType.HDRI
         elif isinstance(item, Asset):
             is_hdri = item.asset_type == AssetType.HDRI
+
+        resolution_options = self._collect_local_resolution_options(item)
+        if not resolution_options:
+            resolution_options = list(AVAILABLE_RESOLUTIONS)
 
         schema: dict[str, Any] = {}
         if is_hdri:
@@ -620,8 +675,8 @@ class PolyHavenPlugin(SharedAssetLibraryUtils):
 
         schema["resolution"] = {
             "type": "choice",
-            "options": AVAILABLE_RESOLUTIONS,
-            "default": DEFAULT_RESOLUTION,
+            "options": resolution_options,
+            "default": self._default_resolution_for_options(resolution_options),
         }
         return schema
 

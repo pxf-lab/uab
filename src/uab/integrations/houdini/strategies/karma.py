@@ -6,8 +6,8 @@ Implements material and environment light creation for Karma (Solaris/USD).
 from __future__ import annotations
 
 import logging
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from uab.core.models import CompositeAsset, CompositeType, StandardAsset
 from uab.integrations.houdini._hou import require_hou

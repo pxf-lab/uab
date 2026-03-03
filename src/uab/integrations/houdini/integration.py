@@ -457,11 +457,7 @@ class HoudiniIntegration(HostIntegration):
 
         preferred_format = "exr" if bool(
             options.get("use_exr", False)) else "hdr"
-        selected = self._get_hdri_asset_for_preferences(
-            composite,
-            target_resolution=target_resolution,
-            preferred_format=preferred_format,
-        )
+        selected = self._select_hdri_asset_for_import(composite, options)
         if not selected or not selected.local_path:
             raise ValueError(f"No local HDRI available for: {composite.name}")
 
@@ -499,6 +495,129 @@ class HoudiniIntegration(HostIntegration):
         )
 
         return strategy.create_environment_light(narrowed, options)
+
+    def _select_hdri_asset_for_import(
+        self, composite: CompositeAsset, options: dict[str, Any]
+    ) -> Asset | None:
+        """
+        Resolve the HDRI leaf to import for Houdini.
+
+        Selection precedence:
+        1) Explicit option (`hdri_asset_id`, then `selected_asset_id`)
+        2) Resolution/format preference fallback
+        3) Optional user picker (only when `prompt_for_hdri_file=True`)
+        """
+        local_assets: list[Asset] = [
+            c
+            for c in composite.children
+            if isinstance(c, Asset) and c.status == AssetStatus.LOCAL and c.local_path
+        ]
+        if not local_assets:
+            return None
+
+        by_id = {a.id: a for a in local_assets}
+        explicit_id_any = options.get("hdri_asset_id") or options.get("selected_asset_id")
+        if isinstance(explicit_id_any, str):
+            explicit = by_id.get(explicit_id_any)
+            if explicit:
+                return explicit
+
+        target_resolution = options.get("resolution")
+        if not isinstance(target_resolution, str):
+            target_resolution = None
+        preferred_format = "exr" if bool(options.get("use_exr", False)) else "hdr"
+
+        preferred = self._get_hdri_asset_for_preferences(
+            composite,
+            target_resolution=target_resolution,
+            preferred_format=preferred_format,
+        )
+        if not preferred or preferred.id not in by_id:
+            preferred = max(local_assets, key=self._resolution_key)
+
+        if len(local_assets) <= 1:
+            return preferred
+
+        # Keep the default flow to a single Import Settings dialog.
+        if options.get("prompt_for_hdri_file") is not True:
+            return preferred
+
+        try:
+            return self._prompt_for_hdri_asset_selection(
+                composite=composite,
+                candidates=local_assets,
+                default_asset=preferred,
+            )
+        except ValueError:
+            raise
+        except Exception as exc:
+            logger.debug(
+                "HDRI picker unavailable, falling back to default selection: %s",
+                exc,
+            )
+            return preferred
+
+    def _prompt_for_hdri_asset_selection(
+        self,
+        composite: CompositeAsset,
+        candidates: list[Asset],
+        default_asset: Asset,
+    ) -> Asset:
+        """Ask the user which local HDRI variant to import."""
+        if not has_hou():
+            return default_asset
+        hou = require_hou()
+        ui = getattr(hou, "ui", None)
+        if ui is None or not hasattr(ui, "selectFromList"):
+            return default_asset
+
+        labels = [self._format_hdri_choice_label(a) for a in candidates]
+        default_index = 0
+        if default_asset in candidates:
+            default_index = candidates.index(default_asset)
+
+        selection = ui.selectFromList(
+            labels,
+            default_choices=(default_index,),
+            exclusive=True,
+            title=f"Select HDRI Variant - {composite.name}",
+            message="Choose the local file to import.",
+        )
+        if not selection:
+            raise ValueError(f"HDRI import cancelled for: {composite.name}")
+
+        idx_any = selection[0]
+        try:
+            idx = int(idx_any)
+        except Exception:
+            return default_asset
+
+        if 0 <= idx < len(candidates):
+            return candidates[idx]
+        return default_asset
+
+    def _format_hdri_choice_label(self, asset: Asset) -> str:
+        """Build a readable label for HDRI picker entries."""
+        filename = asset.local_path.name if asset.local_path else asset.name
+        details: list[str] = []
+
+        if isinstance(asset.metadata, dict):
+            resolution_any = asset.metadata.get("resolution")
+            if isinstance(resolution_any, str) and resolution_any:
+                details.append(resolution_any)
+
+            fmt_any = asset.metadata.get("format")
+            if isinstance(fmt_any, str) and fmt_any:
+                details.append(fmt_any)
+
+        if not details and asset.local_path:
+            ext = asset.local_path.suffix.lstrip(".")
+            if ext:
+                details.append(ext)
+
+        if details:
+            return f"{filename} ({', '.join(details)})"
+        return filename
 
     def _import_model_composite(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
         """Import a MODEL composite as geometry."""
