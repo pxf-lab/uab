@@ -90,6 +90,16 @@ def get_database_path() -> Path:
     return get_app_support_dir() / "assets.db"
 
 
+def get_preferences_path() -> Path:
+    """
+    Get the path to the user preferences JSON file.
+
+    Returns:
+        Path to the preferences file
+    """
+    return get_app_support_dir() / "preferences.json"
+
+
 def _ensure_directories() -> None:
     """Create all necessary directories if they don't exist."""
     dirs = [
