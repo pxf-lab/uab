@@ -461,16 +461,21 @@ class HoudiniIntegration(HostIntegration):
         if not selected or not selected.local_path:
             raise ValueError(f"No local HDRI available for: {composite.name}")
 
-        if target_resolution:
-            found_res = (
-                selected.metadata.get("resolution")
-                if isinstance(selected.metadata, dict)
-                else None
+        found_res: str | None = None
+        if isinstance(selected.metadata, dict):
+            res_any = selected.metadata.get("resolution")
+            if isinstance(res_any, str) and res_any:
+                found_res = res_any
+
+        # Expose the effective resolution to the presenter so the UI can warn
+        # users when an HDRI import falls back from their preferred resolution.
+        if found_res is not None:
+            options["_imported_hdri_resolution"] = found_res
+
+        if target_resolution and found_res != target_resolution:
+            logger.warning(
+                f"Requested resolution {target_resolution} but using {found_res or 'unknown'} for HDRI {composite.name}"
             )
-            if found_res != target_resolution:
-                logger.warning(
-                    f"Requested resolution {target_resolution} but using {found_res or 'unknown'} for HDRI {composite.name}"
-                )
 
         found_fmt = self._get_asset_format(selected)
         if found_fmt and found_fmt != preferred_format:

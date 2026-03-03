@@ -783,6 +783,30 @@ class TabPresenter(QObject):
 
         return options
 
+    def _format_hdri_resolution_status_message(
+        self,
+        item: CompositeAsset,
+        options: dict[str, Any],
+    ) -> str:
+        """
+        Build an import status message with HDRI resolution fallback warning when needed.
+
+        Hosts can report the effective imported resolution via
+        options["_imported_hdri_resolution"].
+        """
+        requested_any = options.get("resolution")
+        requested = requested_any if isinstance(requested_any, str) else None
+        effective_any = options.get("_imported_hdri_resolution")
+        effective = effective_any if isinstance(effective_any, str) else None
+
+        if requested and effective and requested != effective:
+            return (
+                f"Imported {item.name}. Preferred HDRI resolution {requested} "
+                f"was not available; used {effective}."
+            )
+
+        return f"Imported {item.name}"
+
     async def _do_import(self, item: Browsable, *, quick_import: bool = False) -> None:
         """Execute import asynchronously (asset or composite)."""
         try:
@@ -808,7 +832,12 @@ class TabPresenter(QObject):
                 self.status_message.emit(f"Importing {item.name}...")
                 # type: ignore[attr-defined]
                 self._host.import_composite(item, options)
-                self.status_message.emit(f"Imported {item.name}")
+                if item.composite_type == CompositeType.HDRI:
+                    self.status_message.emit(
+                        self._format_hdri_resolution_status_message(item, options)
+                    )
+                else:
+                    self.status_message.emit(f"Imported {item.name}")
                 return
 
             # Asset import (single leaf)
