@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from uab.presenters.tab_presenter import TabPresenter
     from uab.ui.browser import BrowserView
     from uab.ui.main_widget import MainWidget
+    from uab.ui.settings_tab import SettingsTab
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +50,15 @@ class MainPresenter:
         presenter = widget.initialize(host_integration=HoudiniIntegration())
     """
 
+    _SETTINGS_TAB_ID = "__settings__"
+
     def __init__(self, view: MainWidget, host: HostIntegration) -> None:
         self._view = view
         self._host = host
 
-        # Maps tab index to (plugin_id, tab_presenter) tuple
-        self._tabs: dict[int, tuple[str, TabPresenter]] = {}
+        # Maps tab index to (plugin_id, tab_presenter) tuple.
+        # Settings tabs are tracked with tab_presenter=None.
+        self._tabs: dict[int, tuple[str, TabPresenter | None]] = {}
 
         # Maps plugin_id to instantiated plugin
         self._plugins: dict[str, AssetLibraryPlugin] = {}
@@ -62,13 +66,12 @@ class MainPresenter:
         # Persistent user preferences (used by settings + quick import defaults)
         self._preferences_store = PreferencesStore()
         self._preferences: UserPreferences = self._preferences_store.load()
-        self._settings_tab = None
+        self._settings_tab: SettingsTab | None = None
 
         # Initialize
         self._discover_plugins()
         self._setup_connections()
         self._populate_menus()
-        self._create_settings_tab()
 
         # Optionally create a default tab
         self._create_default_tab()
@@ -115,6 +118,7 @@ class MainPresenter:
             plugin_id: plugin.display_name
             for plugin_id, plugin in self._plugins.items()
         }
+        plugins_menu[self._SETTINGS_TAB_ID] = "Settings"
         self._view.populate_new_tab_menu(plugins_menu)
 
     def _create_default_tab(self) -> None:
@@ -128,38 +132,44 @@ class MainPresenter:
             iter(self._plugins))
         self.create_tab(default_plugin_id)
 
-    def _create_settings_tab(self) -> None:
-        """Create and wire the persistent Settings tab."""
+    def _create_settings_tab(self) -> int:
+        """Create (or focus) the Settings tab."""
         try:
             from uab.ui.settings_tab import SettingsTab
         except Exception as e:
             logger.warning(f"Failed to import SettingsTab: {e}")
-            return
+            raise ValueError("Settings tab is unavailable") from e
 
         try:
-            settings_tab = SettingsTab()
-            hdri = self._preferences.hdri_quick_import
-            settings_tab.set_hdri_quick_import_preferences(
-                resolution=hdri.resolution,
-                file_type=hdri.file_type,
-            )
-            settings_tab.hdri_quick_import_changed.connect(
-                self._on_hdri_quick_import_changed
-            )
-            self._settings_tab = settings_tab
+            if self._settings_tab is None:
+                settings_tab = SettingsTab()
+                hdri = self._preferences.hdri_quick_import
+                settings_tab.set_hdri_quick_import_preferences(
+                    resolution=hdri.resolution,
+                    file_type=hdri.file_type,
+                )
+                settings_tab.hdri_quick_import_changed.connect(
+                    self._on_hdri_quick_import_changed
+                )
+                self._settings_tab = settings_tab
+            else:
+                settings_tab = self._settings_tab
 
             add_settings_tab = getattr(self._view, "add_settings_tab", None)
             if callable(add_settings_tab):
-                add_settings_tab(settings_tab, "Settings")
-                return
+                tab_index = add_settings_tab(settings_tab, "Settings")
+            else:
+                # Backward-compatible fallback for views without add_settings_tab().
+                try:
+                    tab_index = self._view.add_tab(settings_tab, "Settings", closable=True)
+                except TypeError:
+                    tab_index = self._view.add_tab(settings_tab, "Settings")
 
-            # Backward-compatible fallback for views without add_settings_tab().
-            try:
-                self._view.add_tab(settings_tab, "Settings", closable=False)
-            except TypeError:
-                self._view.add_tab(settings_tab, "Settings")
+            self._tabs[tab_index] = (self._SETTINGS_TAB_ID, None)
+            return tab_index
         except Exception as e:
             logger.warning(f"Failed to create settings tab: {e}")
+            raise ValueError("Settings tab could not be created") from e
 
     def _on_hdri_quick_import_changed(self, resolution: str, file_type: str) -> None:
         """Persist updated HDRI quick-import preferences from the Settings tab."""
@@ -195,6 +205,9 @@ class MainPresenter:
         Raises:
             ValueError: If the plugin_id is not found
         """
+        if plugin_id == self._SETTINGS_TAB_ID:
+            return self._create_settings_tab()
+
         if plugin_id not in self._plugins:
             raise ValueError(f"Unknown plugin: {plugin_id}")
 

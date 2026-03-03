@@ -195,7 +195,7 @@ class MainWidget(QWidget):
 
     def add_settings_tab(self, widget: QWidget, title: str = "Settings") -> int:
         """
-        Add the persistent Settings tab (single instance, non-closable).
+        Add the Settings tab (single instance).
 
         Args:
             widget: The settings widget instance
@@ -210,7 +210,7 @@ class MainWidget(QWidget):
                 self._tab_widget.setCurrentIndex(self._settings_tab_index)
                 return self._settings_tab_index
 
-        index = self.add_tab(widget, title, closable=False)
+        index = self.add_tab(widget, title, closable=True)
         self._settings_tab_index = index
         return index
 
