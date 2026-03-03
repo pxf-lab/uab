@@ -341,6 +341,68 @@ class TestTabPresenterMilestone5:
         assert imported.id == material.id
         assert options["renderer"] == "arnold"
 
+    def test_import_composite_uses_source_plugin_settings_schema(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
+    ) -> None:
+        from uab.presenters.tab_presenter import TabPresenter
+
+        leaf = Asset(
+            id="polyhaven-auto_service:2k:hdr",
+            source="polyhaven",
+            external_id="auto_service:2k:hdr",
+            name="auto_service_2k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.LOCAL,
+            local_path=tmp_path / "auto_service_2k.hdr",
+            metadata={"resolution": "2k", "format": "hdr"},
+        )
+        composite = CompositeAsset(
+            id="polyhaven-auto_service",
+            source="polyhaven",
+            external_id="auto_service",
+            name="Auto Service",
+            composite_type=CompositeType.HDRI,
+            children=[leaf],
+        )
+
+        local_tab_plugin = PresenterTestPlugin(
+            items=[composite], plugin_id="local", can_download=False
+        )
+        source_plugin = PresenterTestPlugin(
+            items=[], plugin_id="polyhaven", can_download=True
+        )
+
+        local_tab_plugin.get_settings_schema = MagicMock(return_value=None)  # type: ignore[method-assign]
+        source_plugin.get_settings_schema = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "resolution": {
+                    "type": "choice",
+                    "options": ["1k", "2k"],
+                    "default": "2k",
+                }
+            }
+        )
+
+        presenter = TabPresenter(
+            plugin=local_tab_plugin,
+            view=mock_view,
+            host=mock_host,
+            get_plugin_by_source=lambda source: source_plugin if source == "polyhaven" else None,
+        )
+        asyncio.run(presenter._do_search(""))
+
+        presenter._show_settings_dialog = MagicMock(  # type: ignore[method-assign]
+            return_value={"resolution": "2k"}
+        )
+        presenter._on_import_requested(composite.id)
+
+        source_plugin.get_settings_schema.assert_called_once_with(composite)
+        presenter._show_settings_dialog.assert_called_once()
+        assert len(mock_host.imported_composites) == 1
+        _imported, options = mock_host.imported_composites[0]
+        assert options["resolution"] == "2k"
+        assert options["renderer"] == "arnold"
+
     def test_download_asset_delegates_to_source_plugin(
         self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
     ) -> None:

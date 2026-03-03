@@ -65,6 +65,56 @@ class DummyStrategy(RenderStrategy):
         return None
 
 
+class DummyHdriStrategy(RenderStrategy):
+    """RenderStrategy stub for testing HDRI composite handoff."""
+
+    def __init__(self) -> None:
+        self.hdri_calls: list[tuple[CompositeAsset, dict[str, Any]]] = []
+
+    def get_required_texture_maps(self) -> set[str]:
+        return set()
+
+    def get_optional_texture_maps(self) -> set[str]:
+        return set()
+
+    def create_environment_light(
+        self, composite: CompositeAsset, options: dict[str, Any]
+    ) -> Any:
+        self.hdri_calls.append((composite, dict(options)))
+        return {"name": composite.name, "count": len(composite.children)}
+
+    def update_environment_light(
+        self, asset: StandardAsset, options: dict[str, Any]
+    ) -> None:
+        return None
+
+    def create_material_from_textures(
+        self, name: str, textures: dict[str, Path], options: dict[str, Any]
+    ) -> Any:
+        raise NotImplementedError
+
+    def create_material(self, composite: CompositeAsset, options: dict[str, Any]) -> Any:
+        raise NotImplementedError
+
+    def update_material(self, asset: StandardAsset, options: dict[str, Any]) -> None:
+        return None
+
+
+class _FakeHouUI:
+    """Small fake for hou.ui.selectFromList in integration tests."""
+
+    def __init__(self, selection: tuple[int, ...] | tuple[()]) -> None:
+        self.selection = selection
+
+    def selectFromList(self, *_args, **_kwargs) -> tuple[int, ...] | tuple[()]:
+        return self.selection
+
+
+class _FakeHou:
+    def __init__(self, selection: tuple[int, ...] | tuple[()]) -> None:
+        self.ui = _FakeHouUI(selection)
+
+
 def _make_asset(
     path: Path,
     *,
@@ -114,6 +164,18 @@ def _material(name: str, children: list[CompositeAsset]) -> CompositeAsset:
         external_id=f"mat:{name}",
         name=name,
         composite_type=CompositeType.MATERIAL,
+        metadata={},
+        children=children,
+    )
+
+
+def _hdri(name: str, children: list[Asset]) -> CompositeAsset:
+    return CompositeAsset(
+        id=f"hdri:{name}",
+        source="test",
+        external_id=f"hdri:{name}",
+        name=name,
+        composite_type=CompositeType.HDRI,
         metadata={},
         children=children,
     )
@@ -353,6 +415,116 @@ def test_import_material_missing_optional_texture_logs_info(
     integration._import_material(mat, {"renderer": "karma", "resolution": "2k"})
 
     assert "Missing optional textures" in caplog.text
+
+
+def test_import_hdri_composite_narrows_variants_for_karma_renderer(
+    tmp_path: Path,
+) -> None:
+    integration = HoudiniIntegration()
+    strategy = DummyHdriStrategy()
+    integration._strategies = {"karma": strategy}
+
+    hdr_2k = _make_asset(
+        tmp_path / "sunset_2k.hdr",
+        asset_type=AssetType.HDRI,
+        resolution="2k",
+    )
+    hdr_2k.metadata["format"] = "hdr"
+
+    exr_4k = _make_asset(
+        tmp_path / "sunset_4k.exr",
+        asset_type=AssetType.HDRI,
+        resolution="4k",
+    )
+    exr_4k.metadata["format"] = "exr"
+
+    hdri = _hdri("sunset", [hdr_2k, exr_4k])
+
+    integration._import_hdri_composite(hdri, {"renderer": "karma", "resolution": "2k"})
+
+    assert strategy.hdri_calls
+    passed_composite, _passed_options = strategy.hdri_calls[0]
+    assert len(passed_composite.children) == 1
+    child = passed_composite.children[0]
+    assert isinstance(child, Asset)
+    assert child.id == hdr_2k.id
+
+
+def test_import_hdri_composite_narrows_variants_for_non_karma_renderer(
+    tmp_path: Path,
+) -> None:
+    integration = HoudiniIntegration()
+    strategy = DummyHdriStrategy()
+    integration._strategies = {"redshift": strategy}
+
+    hdr_2k = _make_asset(
+        tmp_path / "sunset_2k.hdr",
+        asset_type=AssetType.HDRI,
+        resolution="2k",
+    )
+    hdr_2k.metadata["format"] = "hdr"
+
+    exr_4k = _make_asset(
+        tmp_path / "sunset_4k.exr",
+        asset_type=AssetType.HDRI,
+        resolution="4k",
+    )
+    exr_4k.metadata["format"] = "exr"
+
+    hdri = _hdri("sunset", [hdr_2k, exr_4k])
+
+    integration._import_hdri_composite(
+        hdri,
+        {"renderer": "redshift", "resolution": "2k"},
+    )
+
+    assert strategy.hdri_calls
+    passed_composite, _passed_options = strategy.hdri_calls[0]
+    assert len(passed_composite.children) == 1
+    child = passed_composite.children[0]
+    assert isinstance(child, Asset)
+    assert child.id == hdr_2k.id
+
+
+def test_import_hdri_composite_prompt_uses_user_choice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import uab.integrations.houdini.integration as houdini_integration
+
+    integration = HoudiniIntegration()
+    strategy = DummyHdriStrategy()
+    integration._strategies = {"karma": strategy}
+
+    hdr_2k = _make_asset(
+        tmp_path / "sunset_2k.hdr",
+        asset_type=AssetType.HDRI,
+        resolution="2k",
+    )
+    hdr_2k.metadata["format"] = "hdr"
+
+    exr_4k = _make_asset(
+        tmp_path / "sunset_4k.exr",
+        asset_type=AssetType.HDRI,
+        resolution="4k",
+    )
+    exr_4k.metadata["format"] = "exr"
+
+    hdri = _hdri("sunset", [hdr_2k, exr_4k])
+
+    monkeypatch.setattr(houdini_integration, "has_hou", lambda: True)
+    monkeypatch.setattr(houdini_integration, "require_hou", lambda: _FakeHou((1,)))
+
+    integration._import_hdri_composite(
+        hdri,
+        {"renderer": "karma", "resolution": "2k", "prompt_for_hdri_file": True},
+    )
+
+    assert strategy.hdri_calls
+    passed_composite, _passed_options = strategy.hdri_calls[0]
+    assert len(passed_composite.children) == 1
+    child = passed_composite.children[0]
+    assert isinstance(child, Asset)
+    assert child.id == exr_4k.id
 
 
 def test_normalize_texture_keys_handles_variants(tmp_path: Path) -> None:

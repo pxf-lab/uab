@@ -714,6 +714,131 @@ class TestPolyHavenPluginSettingsSchema:
         assert schema["use_exr"]["type"] == "bool"
         assert schema["resolution"]["type"] == "choice"
 
+    def test_settings_schema_resolution_options_only_include_local_hdri_lods(
+        self, tmp_path: Path
+    ) -> None:
+        """Resolution picker should only include local, import-ready HDRI LODs."""
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        local_1k = Asset(
+            id="polyhaven-sky:1k:hdr",
+            source="polyhaven",
+            external_id="sky:1k:hdr",
+            name="sky_1k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.LOCAL,
+            local_path=tmp_path / "sky_1k.hdr",
+            metadata={"resolution": "1k", "format": "hdr"},
+        )
+        cloud_2k = Asset(
+            id="polyhaven-sky:2k:hdr",
+            source="polyhaven",
+            external_id="sky:2k:hdr",
+            name="sky_2k.hdr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.CLOUD,
+            metadata={"resolution": "2k", "format": "hdr"},
+        )
+        local_4k = Asset(
+            id="polyhaven-sky:4k:exr",
+            source="polyhaven",
+            external_id="sky:4k:exr",
+            name="sky_4k.exr",
+            asset_type=AssetType.HDRI,
+            status=AssetStatus.LOCAL,
+            local_path=tmp_path / "sky_4k.exr",
+            metadata={"resolution": "4k", "format": "exr"},
+        )
+
+        hdri = CompositeAsset(
+            id="polyhaven-sky",
+            source="polyhaven",
+            external_id="sky",
+            name="Sky",
+            composite_type=CompositeType.HDRI,
+            children=[local_1k, cloud_2k, local_4k],
+        )
+
+        schema = plugin.get_settings_schema(hdri)
+        assert schema is not None
+        assert schema["resolution"]["options"] == ["1k", "4k"]
+        assert schema["resolution"]["default"] == "4k"
+
+    def test_settings_schema_resolution_options_use_local_nested_material_lods(
+        self, tmp_path: Path
+    ) -> None:
+        """Nested MATERIAL trees should aggregate only local resolutions."""
+        from uab.plugins.polyhaven import PolyHavenPlugin
+
+        db = AssetDatabase(db_path=tmp_path / "test.db")
+        plugin = PolyHavenPlugin(db=db, library_root=tmp_path / "library")
+
+        diffuse = CompositeAsset(
+            id="polyhaven-rusty_metal:diffuse",
+            source="polyhaven",
+            external_id="rusty_metal:diffuse",
+            name="diffuse",
+            composite_type=CompositeType.TEXTURE,
+            metadata={"role": "diffuse", "map_type": "diffuse"},
+            children=[
+                Asset(
+                    id="polyhaven-rusty_metal:diffuse:1k",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse:1k",
+                    name="rusty_diff_1k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.LOCAL,
+                    local_path=tmp_path / "rusty_diff_1k.png",
+                    metadata={"resolution": "1k", "map_type": "diffuse"},
+                ),
+                Asset(
+                    id="polyhaven-rusty_metal:diffuse:4k",
+                    source="polyhaven",
+                    external_id="rusty_metal:diffuse:4k",
+                    name="rusty_diff_4k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.CLOUD,
+                    metadata={"resolution": "4k", "map_type": "diffuse"},
+                ),
+            ],
+        )
+        normal = CompositeAsset(
+            id="polyhaven-rusty_metal:normal",
+            source="polyhaven",
+            external_id="rusty_metal:normal",
+            name="normal",
+            composite_type=CompositeType.TEXTURE,
+            metadata={"role": "normal", "map_type": "normal"},
+            children=[
+                Asset(
+                    id="polyhaven-rusty_metal:normal:2k",
+                    source="polyhaven",
+                    external_id="rusty_metal:normal:2k",
+                    name="rusty_nor_2k.png",
+                    asset_type=AssetType.TEXTURE,
+                    status=AssetStatus.LOCAL,
+                    local_path=tmp_path / "rusty_nor_2k.png",
+                    metadata={"resolution": "2k", "map_type": "normal"},
+                )
+            ],
+        )
+        material = CompositeAsset(
+            id="polyhaven-rusty_metal",
+            source="polyhaven",
+            external_id="rusty_metal",
+            name="Rusty Metal",
+            composite_type=CompositeType.MATERIAL,
+            children=[diffuse, normal],
+        )
+
+        schema = plugin.get_settings_schema(material)
+        assert schema is not None
+        assert schema["resolution"]["options"] == ["1k", "2k"]
+        assert schema["resolution"]["default"] == "2k"
+
 
 def _make_material(external_id: str, name: str, thumbnail_url: str | None = None) -> CompositeAsset:
     return CompositeAsset(
