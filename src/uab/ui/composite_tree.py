@@ -17,7 +17,10 @@ from PySide6.QtWidgets import (
 )
 
 from uab.core.models import Asset, AssetStatus, CompositeAsset, StandardAsset
-from uab.core.tree_sections import FormatSection, group_leaf_children_by_format
+from uab.core.tree_sections import (
+    ResolutionSection,
+    group_leaf_children_by_resolution,
+)
 from uab.ui.delegates import AssetStatusBadge
 
 
@@ -120,7 +123,7 @@ class CompositeTreeModel(QAbstractItemModel):
             self._root_composite = composite
             self._root_node.children.clear()
             self._node_by_id.clear()
-            grouped_children = group_leaf_children_by_format(composite.children)
+            grouped_children = group_leaf_children_by_resolution(composite.children)
             self._root_node.children = [
                 self._build_node(child, parent=self._root_node)
                 for child in grouped_children
@@ -144,11 +147,11 @@ class CompositeTreeModel(QAbstractItemModel):
             self._node_by_id[item_id] = node
 
         if isinstance(item, CompositeAsset):
-            grouped_children = group_leaf_children_by_format(item.children)
+            grouped_children = group_leaf_children_by_resolution(item.children)
             node.children = [
                 self._build_node(child, parent=node) for child in grouped_children
             ]
-        elif isinstance(item, FormatSection):
+        elif isinstance(item, ResolutionSection):
             node.children = [
                 self._build_node(child, parent=node) for child in item.children
             ]
@@ -214,21 +217,21 @@ class CompositeTreeModel(QAbstractItemModel):
         if role == int(TreeDataRole.ITEM):
             return item
         if role == int(TreeDataRole.ITEM_ID):
-            if isinstance(item, FormatSection):
+            if isinstance(item, ResolutionSection):
                 return ""
             return getattr(item, "id", "")
         if role == int(TreeDataRole.STATUS):
-            if isinstance(item, FormatSection):
+            if isinstance(item, ResolutionSection):
                 return None
             return getattr(item, "display_status", AssetStatus.CLOUD)
         if role == int(TreeDataRole.IS_COMPOSITE):
             return isinstance(item, CompositeAsset)
         if role == int(TreeDataRole.ROLE_LABEL):
-            if isinstance(item, FormatSection):
+            if isinstance(item, ResolutionSection):
                 return ""
             return _role_label_from_metadata(item)
         if role == int(TreeDataRole.IS_SECTION):
-            return isinstance(item, FormatSection)
+            return isinstance(item, ResolutionSection)
 
         return None
 
@@ -236,7 +239,7 @@ class CompositeTreeModel(QAbstractItemModel):
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
         node = self._node_from_index(index)
-        if isinstance(node.item, FormatSection):
+        if isinstance(node.item, ResolutionSection):
             return Qt.ItemFlag.ItemIsEnabled
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
