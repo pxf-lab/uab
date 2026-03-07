@@ -112,6 +112,7 @@ def mock_view() -> MagicMock:
     view.search_requested = MagicMock()
     view.detail_requested = MagicMock()
     view.import_requested = MagicMock()
+    view.direct_import_requested = MagicMock()
     view.download_requested = MagicMock()
     view.remove_requested = MagicMock()
     view.new_asset_requested = MagicMock()
@@ -120,6 +121,7 @@ def mock_view() -> MagicMock:
     view.search_requested.connect = MagicMock()
     view.detail_requested.connect = MagicMock()
     view.import_requested.connect = MagicMock()
+    view.direct_import_requested.connect = MagicMock()
     view.download_requested.connect = MagicMock()
     view.remove_requested.connect = MagicMock()
     view.new_asset_requested.connect = MagicMock()
@@ -500,6 +502,47 @@ class TestTabPresenterMilestone5:
 
 
 class TestTabPresenterQuickImportPreferences:
+    def test_direct_tree_leaf_import_skips_dialog_and_resolution_schema(
+        self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
+    ) -> None:
+        from uab.presenters.tab_presenter import TabPresenter
+
+        texture = Asset(
+            id="polyhaven-rusty:diffuse:4k",
+            source="polyhaven",
+            external_id="rusty:diffuse:4k",
+            name="rusty_diffuse_4k.png",
+            asset_type=AssetType.TEXTURE,
+            status=AssetStatus.LOCAL,
+            local_path=tmp_path / "rusty_diffuse_4k.png",
+            metadata={"resolution": "4k", "map_type": "diffuse"},
+        )
+
+        plugin = PresenterTestPlugin(items=[texture])
+        plugin.get_settings_schema = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "resolution": {
+                    "type": "choice",
+                    "options": ["1k", "2k", "4k"],
+                    "default": "1k",
+                },
+                "use_exr": {"type": "bool", "default": False},
+            }
+        )
+
+        presenter = TabPresenter(plugin=plugin, view=mock_view, host=mock_host)
+        asyncio.run(presenter._do_search(""))
+
+        presenter._show_settings_dialog = MagicMock()  # type: ignore[method-assign]
+        presenter._on_direct_import_requested(texture.id)
+
+        presenter._show_settings_dialog.assert_not_called()
+        assert len(mock_host.imported_assets) == 1
+        _asset, options = mock_host.imported_assets[0]
+        assert options["renderer"] == "arnold"
+        assert "resolution" not in options
+        assert "use_exr" not in options
+
     def test_quick_import_hdri_uses_preferences_and_skips_dialog(
         self, mock_view: MagicMock, mock_host: MockHostIntegration, tmp_path: Path
     ) -> None:
