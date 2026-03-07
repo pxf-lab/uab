@@ -67,6 +67,7 @@ class DetailView(QWidget):
 
     back_clicked = Signal()
     import_clicked = Signal(str)  # item_id
+    tree_import_clicked = Signal(str)  # item_id (direct leaf import)
     download_asset_clicked = Signal(str)  # asset_id
     # composite_id, resolution(str|None)
     download_composite_clicked = Signal(str, object)
@@ -241,6 +242,7 @@ class DetailView(QWidget):
 
         self._tree_delegate.download_clicked.connect(
             self.download_asset_clicked.emit)
+        self._tree_delegate.import_clicked.connect(self.tree_import_clicked.emit)
         self._tree.item_expanded.connect(self.tree_item_expanded.emit)
         selection_model = self._tree.selectionModel()
         if selection_model is not None:
@@ -319,6 +321,7 @@ class DetailView(QWidget):
     def set_import_visible(self, visible: bool) -> None:
         """Show or hide the Import button."""
         self._import_btn.setVisible(visible)
+        self._tree_delegate.set_import_enabled(visible)
 
     def _refresh_composite_controls(self) -> None:
         """Refresh composite-derived UI (warnings + action buttons) in-place."""
@@ -696,6 +699,8 @@ class BrowserView(QWidget):
     filter_changed = Signal(str)  # filter type
     detail_requested = Signal(str)  # item_id
     import_requested = Signal(str)  # item_id
+    # direct per-leaf import from composite tree rows (no settings dialog)
+    direct_import_requested = Signal(str)  # item_id
     # back-compat: some presenters connect to this single-signal download API
     download_requested = Signal(str)  # item_id
     # separate download signals for assets vs composites
@@ -781,6 +786,9 @@ class BrowserView(QWidget):
         self._detail_view = DetailView()
         self._detail_view.back_clicked.connect(self.hide_detail)
         self._detail_view.import_clicked.connect(self.import_requested.emit)
+        self._detail_view.tree_import_clicked.connect(
+            self.direct_import_requested.emit
+        )
         # detail download signals
         self._detail_view.download_asset_clicked.connect(
             self.download_asset_requested.emit

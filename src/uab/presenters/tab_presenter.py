@@ -316,6 +316,9 @@ class TabPresenter(QObject):
         self._view.search_requested.connect(self._on_search_requested)
         self._view.detail_requested.connect(self._on_detail_requested)
         self._view.import_requested.connect(self._on_import_requested)
+        direct_import_sig = getattr(self._view, "direct_import_requested", None)
+        if direct_import_sig is not None:
+            direct_import_sig.connect(self._on_direct_import_requested)
         # back-compat: existing BrowserView emits a single download_requested(item_id)
         self._view.download_requested.connect(self._on_download_requested)
 
@@ -651,6 +654,15 @@ class TabPresenter(QObject):
         self._run_async(self._do_import(item))
 
     @Slot(str)
+    def _on_direct_import_requested(self, item_id: str) -> None:
+        """Handle direct tree-row import request (no settings dialog)."""
+        item = self._item_cache.get(item_id)
+        if not item:
+            logger.warning(f"Item not found for direct import: {item_id}")
+            return
+        self._run_async(self._do_import(item, quick_import=True, skip_schema=True))
+
+    @Slot(str)
     def _on_new_asset_requested(self, asset_id: str) -> None:
         """
         Handle new asset request (Cmd/Ctrl+Click in context menu).
@@ -759,6 +771,7 @@ class TabPresenter(QObject):
         schema: dict[str, Any] | None,
         *,
         quick_import: bool,
+        skip_schema: bool = False,
     ) -> dict[str, Any] | None:
         """
         Resolve import options for manual vs quick import.
@@ -766,6 +779,9 @@ class TabPresenter(QObject):
         Returns:
             Dict of options, or None when the user cancels a manual import dialog.
         """
+        if skip_schema:
+            return {}
+
         options: dict[str, Any] = {}
 
         if schema:
@@ -807,7 +823,13 @@ class TabPresenter(QObject):
 
         return f"Imported {item.name}"
 
-    async def _do_import(self, item: Browsable, *, quick_import: bool = False) -> None:
+    async def _do_import(
+        self,
+        item: Browsable,
+        *,
+        quick_import: bool = False,
+        skip_schema: bool = False,
+    ) -> None:
         """Execute import asynchronously (asset or composite)."""
         try:
             if isinstance(item, CompositeAsset):
@@ -823,6 +845,7 @@ class TabPresenter(QObject):
                     item,
                     schema,
                     quick_import=quick_import,
+                    skip_schema=skip_schema,
                 )
                 if options is None:
                     logger.info("Import cancelled by user")
@@ -858,6 +881,7 @@ class TabPresenter(QObject):
                 asset_item,
                 schema,
                 quick_import=quick_import,
+                skip_schema=skip_schema,
             )
             if options is None:
                 # User cancelled

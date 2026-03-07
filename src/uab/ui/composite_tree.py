@@ -303,9 +303,10 @@ class CompositeTreeView(QTreeView):
 
 
 class TreeItemDelegate(QStyledItemDelegate):
-    """Delegate for rendering composite tree items with status + download actions."""
+    """Delegate for rendering composite tree items with per-row actions."""
 
     download_clicked = Signal(str)  # item_id
+    import_clicked = Signal(str)  # item_id
 
     _COLOR_TEXT = QColor("#e0e0e0")
     _COLOR_MUTED = QColor("#7a7a7a")
@@ -316,6 +317,7 @@ class TreeItemDelegate(QStyledItemDelegate):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._download_enabled = True
+        self._import_enabled = True
 
     def set_download_enabled(self, enabled: bool) -> None:
         """Enable/disable per-leaf download actions in the tree."""
@@ -323,6 +325,33 @@ class TreeItemDelegate(QStyledItemDelegate):
         view = self.parent()
         if isinstance(view, QTreeView):
             view.viewport().update()
+
+    def set_import_enabled(self, enabled: bool) -> None:
+        """Enable/disable per-leaf import actions in the tree."""
+        self._import_enabled = enabled
+        view = self.parent()
+        if isinstance(view, QTreeView):
+            view.viewport().update()
+
+    def _show_download_action(
+        self, item: object, *, is_composite: bool, status: AssetStatus
+    ) -> bool:
+        return (
+            self._download_enabled
+            and not is_composite
+            and status == AssetStatus.CLOUD
+            and isinstance(item, (Asset, StandardAsset))
+        )
+
+    def _show_import_action(
+        self, item: object, *, is_composite: bool, status: AssetStatus
+    ) -> bool:
+        return (
+            self._import_enabled
+            and not is_composite
+            and status == AssetStatus.LOCAL
+            and isinstance(item, (Asset, StandardAsset))
+        )
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:  # noqa: N802
         painter.save()
@@ -387,16 +416,16 @@ class TreeItemDelegate(QStyledItemDelegate):
         status_rect = (x, y_mid - icon_size // 2, icon_size, icon_size)
         x += icon_size + 8
 
-        # Download button area (right)
-        show_download = (
-            self._download_enabled
-            and not is_composite
-            and status == AssetStatus.CLOUD
-            and isinstance(item, (Asset, StandardAsset))
+        # Per-item action button area (right)
+        show_download = self._show_download_action(
+            item, is_composite=is_composite, status=status
         )
-        download_rect = None
-        if show_download:
-            download_rect = (
+        show_import = self._show_import_action(
+            item, is_composite=is_composite, status=status
+        )
+        action_rect = None
+        if show_download or show_import:
+            action_rect = (
                 rect.right() - margin_x - button_size,
                 y_mid - button_size // 2,
                 button_size,
@@ -404,8 +433,8 @@ class TreeItemDelegate(QStyledItemDelegate):
             )
 
         right_limit = rect.right() - margin_x
-        if download_rect is not None:
-            right_limit = download_rect[0] - 8
+        if action_rect is not None:
+            right_limit = action_rect[0] - 8
 
         # Status icon
         badge = AssetStatusBadge.from_status(status, is_mixed=is_mixed)
@@ -480,22 +509,25 @@ class TreeItemDelegate(QStyledItemDelegate):
                 elided_role,
             )
 
-        # Download button
-        if download_rect is not None:
-            painter.setPen(QPen(QColor("#4a9eff"), 1))
+        # Action button
+        if action_rect is not None:
+            button_color = QColor("#4a9eff") if show_download else QColor("#57c84d")
+            button_text = "↓" if show_download else "↑"
+
+            painter.setPen(QPen(button_color, 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(
-                download_rect[0], download_rect[1], download_rect[2], download_rect[3], 4, 4
+                action_rect[0], action_rect[1], action_rect[2], action_rect[3], 4, 4
             )
-            painter.setPen(QColor("#4a9eff"))
+            painter.setPen(button_color)
             painter.setFont(font)
             painter.drawText(
-                download_rect[0],
-                download_rect[1],
-                download_rect[2],
-                download_rect[3],
+                action_rect[0],
+                action_rect[1],
+                action_rect[2],
+                action_rect[3],
                 int(Qt.AlignmentFlag.AlignCenter),
-                "↓",
+                button_text,
             )
 
         painter.restore()
@@ -519,30 +551,33 @@ class TreeItemDelegate(QStyledItemDelegate):
         status = index.data(int(TreeDataRole.STATUS))
         status = _coerce_asset_status(status)
 
-        show_download = (
-            self._download_enabled
-            and not is_composite
-            and status == AssetStatus.CLOUD
-            and isinstance(item, (Asset, StandardAsset))
+        show_download = self._show_download_action(
+            item, is_composite=is_composite, status=status
         )
-        if not show_download:
+        show_import = self._show_import_action(
+            item, is_composite=is_composite, status=status
+        )
+        if not (show_download or show_import):
             return False
 
         rect = option.rect
         margin_x = 6
         button_size = 18
         y_mid = rect.y() + rect.height() // 2
-        download_rect = (
+        action_rect = (
             rect.right() - margin_x - button_size,
             y_mid - button_size // 2,
             button_size,
             button_size,
         )
 
-        if download_rect[0] <= mouse.position().x() <= download_rect[0] + download_rect[2] and download_rect[1] <= mouse.position().y() <= download_rect[1] + download_rect[3]:
+        if action_rect[0] <= mouse.position().x() <= action_rect[0] + action_rect[2] and action_rect[1] <= mouse.position().y() <= action_rect[1] + action_rect[3]:
             item_id = getattr(item, "id", None)
             if isinstance(item_id, str) and item_id:
-                self.download_clicked.emit(item_id)
+                if show_download:
+                    self.download_clicked.emit(item_id)
+                else:
+                    self.import_clicked.emit(item_id)
                 return True
 
         return False
